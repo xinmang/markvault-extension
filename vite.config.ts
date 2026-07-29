@@ -18,6 +18,9 @@ export default defineConfig(({ mode }) => {
       }
     },
     build: {
+      // Chrome 扩展的隔离世界与页面世界不同，Vite 注入的 modulepreload
+      // 会触发 cross-world extension resource mismatch，因此交给原生 import 加载。
+      modulePreload: false,
       // 生产环境优化
       minify: isProduction ? 'terser' : false,
       terserOptions: isProduction ? {
