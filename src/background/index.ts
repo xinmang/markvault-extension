@@ -265,7 +265,7 @@ async function handleMessage(
       const bookmark = message.payload as BookmarkInput;
       const result = await bookmarkService.saveBookmark(bookmark);
       if (result.success && !result.offline) {
-        await refreshActiveBookmarkIcon();
+        await refreshActiveBookmarkIcon(true);
       }
       return { success: true, data: result };
     }
@@ -403,7 +403,7 @@ async function handleMessage(
     }
 
     case 'REFRESH_BOOKMARK_ICON': {
-      await refreshActiveBookmarkIcon();
+      await refreshActiveBookmarkIcon(true);
       return { success: true };
     }
 

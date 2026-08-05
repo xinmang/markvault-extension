@@ -1,4 +1,5 @@
 import { bookmarkAPI } from '@/lib/services/bookmark-api';
+import { normalizeBookmarkUrlForMatch } from '@/lib/utils/bookmark-url';
 import { logger } from '@/lib/utils/logger';
 
 const DEFAULT_ICON_PATHS = {
@@ -8,6 +9,7 @@ const DEFAULT_ICON_PATHS = {
 };
 
 const iconRefreshVersions = new Map<number, number>();
+const bookmarkIconStates = new Map<number, { matchKey: string; exists: boolean }>();
 let savedIconDataPromise: Promise<Record<number, ImageData>> | null = null;
 
 function isTrackableUrl(url: string | undefined): url is string {
@@ -80,54 +82,78 @@ async function showSavedIcon(tabId: number): Promise<void> {
 
 /**
  * 刷新指定标签页的书签状态图标。
- * API 按完整 URL 判断；响应后再次核对标签页 URL，防止快速跳转时写入旧状态。
+ * API 按页面匹配键判断；响应后再次核对匹配键，防止快速跳转时写入旧状态。
  */
-export async function refreshBookmarkIconForTab(tabId: number, knownUrl?: string): Promise<void> {
+export async function refreshBookmarkIconForTab(
+  tabId: number,
+  knownUrl?: string,
+  forceRefresh = false
+): Promise<void> {
   const version = (iconRefreshVersions.get(tabId) ?? 0) + 1;
   iconRefreshVersions.set(tabId, version);
 
   try {
-    await showDefaultIcon(tabId);
-
     const url = knownUrl ?? (await chrome.tabs.get(tabId)).url;
     if (!isTrackableUrl(url)) {
+      bookmarkIconStates.delete(tabId);
+      await showDefaultIcon(tabId);
       return;
     }
 
-    const exists = await bookmarkAPI.hasExactUrl(url);
+    const matchKey = normalizeBookmarkUrlForMatch(url);
+    if (!matchKey) {
+      bookmarkIconStates.delete(tabId);
+      await showDefaultIcon(tabId);
+      return;
+    }
+
+    const cachedState = bookmarkIconStates.get(tabId);
+    if (!forceRefresh && cachedState?.matchKey === matchKey) {
+      if (cachedState.exists) {
+        await showSavedIcon(tabId);
+      } else {
+        await showDefaultIcon(tabId);
+      }
+      return;
+    }
+
+    await showDefaultIcon(tabId);
+    const exists = await bookmarkAPI.hasMatchingUrl(url);
     if (iconRefreshVersions.get(tabId) !== version) {
       return;
     }
 
     const latestTab = await chrome.tabs.get(tabId);
-    if (latestTab.url !== url) {
+    if (normalizeBookmarkUrlForMatch(latestTab.url ?? '') !== matchKey) {
       return;
     }
 
+    bookmarkIconStates.set(tabId, { matchKey, exists });
     if (exists) {
       await showSavedIcon(tabId);
     }
   } catch (error) {
     if (iconRefreshVersions.get(tabId) === version) {
+      bookmarkIconStates.delete(tabId);
       await showDefaultIcon(tabId).catch(() => undefined);
     }
     logger.error('[BookmarkIcon] 刷新书签状态失败:', error);
   }
 }
 
-export async function refreshActiveBookmarkIcon(): Promise<void> {
+export async function refreshActiveBookmarkIcon(forceRefresh = false): Promise<void> {
   const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
   if (typeof tab?.id === 'number') {
-    await refreshBookmarkIconForTab(tab.id, tab.url);
+    await refreshBookmarkIconForTab(tab.id, tab.url, forceRefresh);
   }
 }
 
-async function refreshActiveTabs(): Promise<void> {
+async function refreshActiveTabs(forceRefresh = false): Promise<void> {
   const tabs = await chrome.tabs.query({ active: true });
   await Promise.all(
     tabs
       .filter((tab): tab is chrome.tabs.Tab & { id: number } => typeof tab.id === 'number')
-      .map((tab) => refreshBookmarkIconForTab(tab.id, tab.url))
+      .map((tab) => refreshBookmarkIconForTab(tab.id, tab.url, forceRefresh))
   );
 }
 
@@ -155,13 +181,14 @@ export function setupBookmarkIconIndicator(): void {
 
   chrome.tabs.onRemoved.addListener((tabId) => {
     iconRefreshVersions.delete(tabId);
+    bookmarkIconStates.delete(tabId);
   });
 
   chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName === 'local' && changes.config) {
-      void refreshActiveTabs();
+      void refreshActiveTabs(true);
     }
   });
 
-  void refreshActiveTabs();
+  void refreshActiveTabs(true);
 }

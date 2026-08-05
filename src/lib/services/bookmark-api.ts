@@ -192,11 +192,11 @@ export class BookmarkAPIClient {
   }
 
   /**
-   * 按完整 URL 精确判断当前页面是否已经存入 MarkVault。
+   * 按页面匹配键判断当前页面是否已经存入 MarkVault。
    */
-  async hasExactUrl(url: string): Promise<boolean> {
+  async hasMatchingUrl(url: string): Promise<boolean> {
     const client = await this.ensureClient();
-    return client.bookmarks.hasExactUrl(url);
+    return client.bookmarks.hasMatchingUrl(url);
   }
 
   /**

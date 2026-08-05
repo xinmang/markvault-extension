@@ -28,12 +28,12 @@ export class BookmarksAPI extends TMarksClient {
   }
 
   /**
-   * 使用完整 URL 检查书签是否存在。
+   * 按页面匹配键检查书签是否存在。
    *
-   * 优先按完整 URL 查询；若旧书签采用了等价的 URL 写法，则按主机名扩大
-   * 候选范围。两种查询最终都比较规范化后的完整 URL，不会只按域名判定。
+   * 优先按规范化 URL 查询，再按站点或主题 ID 扩大候选范围；所有候选最终
+   * 仍会比较页面匹配键，不会仅凭域名或主题 ID 判定。
    */
-  async hasExactUrl(url: string): Promise<boolean> {
+  async hasMatchingUrl(url: string): Promise<boolean> {
     const normalizedUrl = normalizeBookmarkUrlForMatch(url);
     if (!normalizedUrl) {
       return false;
