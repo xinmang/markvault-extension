@@ -8,9 +8,9 @@ MarkVault 的 Chromium 浏览器扩展，提供以下能力：
 - NewTab、选项页和弹出窗口
 - 支持 Chrome、Edge、Brave、Opera 等 Chromium 内核浏览器
 
-## 来源与版本
+## 来源
 
-本仓库从 [xinmang/tmarks](https://github.com/xinmang/tmarks) 历史提交中提取插件源码，使用提交 `d4062f54ef7b725f0c1f2295c96f11c04e014b7e` 的 `tab/` 目录（该目录最后一次实际修改提交为 `2ef452859136cb527405296a27c6438fd3b3ccad`）。源码遵循上游插件附带的 MIT 许可证，详见 [LICENSE](./LICENSE)。
+本仓库基于 [xinmang/tmarks](https://github.com/xinmang/tmarks) 的浏览器扩展源码独立维护，采用 MIT 许可证，详见 [LICENSE](./LICENSE)。
 
 ## 开发
 
@@ -34,4 +34,4 @@ release/markvault-extension-chrome.zip
 
 ## 与 MarkVault 主项目配套
 
-主项目位于 `C:\Github3\MarkVault` 时，可将构建后的 ZIP 复制到主项目的 `public/extensions/` 目录，并按主项目页面提供下载。
+构建后的 ZIP 可放入 MarkVault 主项目的 `public/extensions/` 目录，供主项目页面下载。

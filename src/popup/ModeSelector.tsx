@@ -3,12 +3,10 @@
  */
 
 import { useState, useEffect } from 'react';
-// @ts-ignore
-import { Lunar } from 'lunar-javascript';
 import { getTMarksUrls } from '@/lib/constants/urls';
 import { StorageService } from '@/lib/utils/storage';
 import { applyTheme, applyThemeStyle } from '@/lib/utils/themeManager';
-import { t, isChineseLocale } from '@/lib/i18n';
+import { t } from '@/lib/i18n';
 
 interface ModeSelectorProps {
   onSelectBookmark: () => void;
@@ -23,14 +21,12 @@ export function ModeSelector({
   onSelectTabCollection,
   onOpenOptions,
 }: ModeSelectorProps) {
-  const [currentTime, setCurrentTime] = useState(new Date());
   const [tmarksUrls, setTmarksUrls] = useState(getTMarksUrls());
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentTime(new Date());
-    }, 1000);
-    return () => clearInterval(timer);
+    chrome.runtime.sendMessage({ type: 'REFRESH_BOOKMARK_ICON' }).catch(() => {
+      // 后台状态刷新失败不影响弹出窗口使用。
+    });
   }, []);
 
   useEffect(() => {
@@ -52,40 +48,6 @@ export function ModeSelector({
     };
     loadAndApplyTheme();
   }, []);
-
-  const formatDate = (date: Date) => {
-    const year = date.getFullYear();
-    const month = date.getMonth() + 1;
-    const day = date.getDate();
-    const weekday = t(`weekday_${date.getDay()}`);
-    
-    if (isChineseLocale()) {
-      return `${year}年${month}月${day}日 ${weekday}`;
-    }
-    return `${weekday}, ${month}/${day}/${year}`;
-  };
-
-  const formatTime = (date: Date) => {
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    const seconds = String(date.getSeconds()).padStart(2, '0');
-    return `${hours}:${minutes}:${seconds}`;
-  };
-
-  const getGreeting = (date: Date) => {
-    const hour = date.getHours();
-    if (hour >= 5 && hour < 12) return t('greeting_morning');
-    if (hour >= 12 && hour < 14) return t('greeting_noon');
-    if (hour >= 14 && hour < 18) return t('greeting_afternoon');
-    if (hour >= 18 && hour < 22) return t('greeting_evening');
-    return t('greeting_night');
-  };
-
-  const formatLunarDate = (date: Date) => {
-    if (!isChineseLocale()) return '';
-    const lunar = Lunar.fromDate(date);
-    return `${lunar.getYearInGanZhi()}${lunar.getYearShengXiao()}年${lunar.getMonthInChinese()}月${lunar.getDayInChinese()}`;
-  };
 
   return (
     <div className="relative h-[80vh] min-h-[580px] w-[380px] overflow-hidden bg-[var(--tab-popup-bg)] text-[var(--tab-popup-text)]">
@@ -116,20 +78,6 @@ export function ModeSelector({
 
         {/* Main Content */}
         <main className="flex-1 space-y-2 overflow-y-auto px-5 pb-[50px] bg-[var(--tab-popup-bg)]">
-          {/* Time Display */}
-          <section className="rounded-xl border border-[var(--tab-popup-border)] bg-[var(--tab-popup-surface)] p-3 shadow-lg">
-            <div className="flex items-center justify-between text-[var(--tab-popup-text)]">
-              <span className="text-xs font-semibold">{getGreeting(currentTime)}</span>
-              <span className="font-mono text-base font-bold tracking-wider">{formatTime(currentTime)}</span>
-            </div>
-            <div className="mt-1.5 flex items-center justify-between text-xs text-[var(--tab-popup-text-muted)]">
-              <span>{formatDate(currentTime)}</span>
-              {isChineseLocale() && (
-                <span className="text-[10px] text-[var(--tab-popup-text-muted)]">{formatLunarDate(currentTime)}</span>
-              )}
-            </div>
-          </section>
-
           {/* Bookmark Mode */}
           <button
             onClick={onSelectBookmark}
@@ -208,27 +156,6 @@ export function ModeSelector({
             </div>
           </button>
 
-          {/* Tips */}
-          <section className="rounded-xl border border-[var(--tab-popup-section-purple-border)] bg-gradient-to-br from-[var(--tab-popup-section-purple-from)] to-[var(--tab-popup-section-blue-from)] p-3.5 shadow-lg">
-            <h3 className="flex items-center gap-2 text-sm font-semibold text-[var(--tab-popup-text)]">
-              <span>💡</span>
-              <span>{t('popup_tips')}</span>
-            </h3>
-            <ul className="mt-2.5 space-y-2 text-xs leading-relaxed text-[var(--tab-popup-text-muted)]">
-              <li className="flex items-start gap-2">
-                <span className="mt-0.5 text-[var(--tab-popup-action-blue-text)]">•</span>
-                <span>{t('popup_tip_bookmark')}</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="mt-0.5 text-[var(--tab-popup-action-amber-text)]">•</span>
-                <span>{t('popup_tip_newtab')}</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="mt-0.5 text-[var(--tab-popup-action-emerald-text)]">•</span>
-                <span>{t('popup_tip_collect')}</span>
-              </li>
-            </ul>
-          </section>
         </main>
 
         {/* Footer */}

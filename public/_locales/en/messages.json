@@ -82,18 +82,6 @@
     "message": "Tips",
     "description": "Tips"
   },
-  "popup_tip_bookmark": {
-    "message": "Save Bookmark: Best for important pages, supports AI smart tags",
-    "description": "Bookmark tip"
-  },
-  "popup_tip_newtab": {
-    "message": "Save to NewTab: Quick save to browser bookmarks, bi-directional sync with NewTab",
-    "description": "NewTab tip"
-  },
-  "popup_tip_collect": {
-    "message": "Collect Tabs: Best for temporarily saving many tabs, similar to OneTab",
-    "description": "Collect tip"
-  },
   "popup_my_bookmarks": {
     "message": "My Bookmarks",
     "description": "My bookmarks"

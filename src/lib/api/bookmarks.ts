@@ -4,6 +4,10 @@
  */
 
 import { TMarksClient } from './client';
+import {
+  getBookmarkUrlCandidateQuery,
+  normalizeBookmarkUrlForMatch,
+} from '@/lib/utils/bookmark-url';
 import type {
   GetBookmarksParams,
   GetBookmarksResponse,
@@ -21,6 +25,51 @@ export class BookmarksAPI extends TMarksClient {
    */
   async getBookmarks(params?: GetBookmarksParams): Promise<GetBookmarksResponse> {
     return this.get<GetBookmarksResponse>('/tab/bookmarks', params);
+  }
+
+  /**
+   * 使用完整 URL 检查书签是否存在。
+   *
+   * 优先按完整 URL 查询；若旧书签采用了等价的 URL 写法，则按主机名扩大
+   * 候选范围。两种查询最终都比较规范化后的完整 URL，不会只按域名判定。
+   */
+  async hasExactUrl(url: string): Promise<boolean> {
+    const normalizedUrl = normalizeBookmarkUrlForMatch(url);
+    if (!normalizedUrl) {
+      return false;
+    }
+
+    const candidateQuery = getBookmarkUrlCandidateQuery(normalizedUrl);
+    const queries = Array.from(
+      new Set([normalizedUrl, candidateQuery].filter((query): query is string => Boolean(query)))
+    );
+
+    for (const keyword of queries) {
+      let cursor: string | undefined;
+
+      do {
+        const response = await this.getBookmarks({
+          keyword,
+          page_size: 200,
+          page_cursor: cursor,
+        });
+        const bookmarks = response?.data?.bookmarks ?? [];
+
+        if (
+          bookmarks.some(
+            (bookmark) => normalizeBookmarkUrlForMatch(bookmark.url) === normalizedUrl
+          )
+        ) {
+          return true;
+        }
+
+        cursor = response?.data?.meta?.has_more
+          ? response.data.meta.next_cursor ?? undefined
+          : undefined;
+      } while (cursor);
+    }
+
+    return false;
   }
 
   /**

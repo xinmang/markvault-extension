@@ -28,6 +28,12 @@ import {
   handleImportUrlsToNewtab,
 } from './handlers/newtab-folders';
 import { handleRecommendNewtabFolder } from './handlers/ai-recommend';
+import {
+  refreshActiveBookmarkIcon,
+  setupBookmarkIconIndicator,
+} from './services/bookmark-icon';
+
+setupBookmarkIconIndicator();
 
 // 初始化 i18n（Service Worker 启动时）
 initI18n().catch((error) => {
@@ -258,6 +264,9 @@ async function handleMessage(
     case 'SAVE_BOOKMARK': {
       const bookmark = message.payload as BookmarkInput;
       const result = await bookmarkService.saveBookmark(bookmark);
+      if (result.success && !result.offline) {
+        await refreshActiveBookmarkIcon();
+      }
       return { success: true, data: result };
     }
 
@@ -391,6 +400,11 @@ async function handleMessage(
     case 'GET_CONFIG': {
       const config = await StorageService.loadConfig();
       return { success: true, data: config };
+    }
+
+    case 'REFRESH_BOOKMARK_ICON': {
+      await refreshActiveBookmarkIcon();
+      return { success: true };
     }
 
     default:
