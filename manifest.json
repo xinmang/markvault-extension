@@ -30,7 +30,8 @@
     "scripting",
     "notifications",
     "bookmarks",
-    "history"
+    "history",
+    "alarms"
   ],
   "host_permissions": [
     "https://api.openai.com/*",

@@ -9,7 +9,7 @@ import { t } from '@/lib/i18n';
 import { StorageService } from '@/lib/utils/storage';
 import { createTMarksClient, type TMarksBookmark, type TMarksTag } from '@/lib/api';
 import { logger } from '@/lib/utils/logger';
-import { getTMarksUrls } from '@/lib/constants/urls';
+import { normalizeApiUrl } from '@/lib/constants/urls';
 
 export interface ExistingBookmarkData {
   id: string;
@@ -26,46 +26,52 @@ export interface ExistingBookmarkData {
 export class BookmarkAPIClient {
   private client: ReturnType<typeof createTMarksClient> | null = null;
   private webBaseUrl: string | null = null;
+  private clientConfigKey: string | null = null;
+  private initializationPromise: Promise<void> | null = null;
 
+  /**
+   * 初始化 API 客户端。
+   * 配置未变化时复用客户端，避免每次操作都重复读取配置和创建实例。
+   */
   async initialize(): Promise<void> {
-    const configuredUrl = await StorageService.getBookmarkSiteApiUrl();
-    const apiKey = await StorageService.getBookmarkSiteApiKey();
+    if (this.initializationPromise) {
+      return this.initializationPromise;
+    }
 
-    logger.log('[BookmarkAPI] initialize - configuredUrl:', configuredUrl);
-    logger.log('[BookmarkAPI] initialize - apiKey exists:', !!apiKey, 'length:', apiKey?.length || 0);
+    this.initializationPromise = this.initializeClient();
+    try {
+      await this.initializationPromise;
+    } finally {
+      this.initializationPromise = null;
+    }
+  }
+
+  private async initializeClient(): Promise<void> {
+    const configuredUrl = await StorageService.getBookmarkSiteApiUrl();
+    const apiKey = (await StorageService.getBookmarkSiteApiKey())?.trim();
 
     if (!apiKey) {
+      this.client = null;
+      this.clientConfigKey = null;
       throw new AppError(
         'API_KEY_INVALID' as ErrorCode,
-        'API Key not found. Please configure your MarkVault API key in the extension settings (Options page).'
+        '未找到 API Key，请先在扩展设置中配置 MarkVault API Key。'
       );
     }
 
-    // 从配置的 URL 获取 API 基础地址
-    // 支持两种格式：
-    // 1. 基础 URL（推荐）：http://localhost:8787 -> http://localhost:8787/api
-    // 2. 完整 API URL（兼容旧版）：http://localhost:8787/api -> http://localhost:8787/api
-    let apiBaseUrl: string;
-    if (configuredUrl) {
-      if (configuredUrl.endsWith('/api')) {
-        // 已经是完整的 API URL
-        apiBaseUrl = configuredUrl;
-      } else {
-        // 基础 URL，需要补全 /api
-        apiBaseUrl = getTMarksUrls(configuredUrl).API_BASE;
-      }
-    } else {
-      // 使用默认 URL
-      apiBaseUrl = getTMarksUrls().API_BASE;
+    const apiBaseUrl = normalizeApiUrl(configuredUrl || '');
+    const nextConfigKey = `${apiBaseUrl}\0${apiKey}`;
+    if (this.client && this.clientConfigKey === nextConfigKey) {
+      return;
     }
 
-    this.webBaseUrl = apiBaseUrl.endsWith('/api') ? apiBaseUrl.slice(0, -4) : apiBaseUrl;
-
-    // Create TMarks client with proper API key
+    this.webBaseUrl = apiBaseUrl.replace(/\/api$/, '');
     this.client = createTMarksClient({
       apiKey,
-      baseUrl: apiBaseUrl
+      baseUrl: apiBaseUrl,
     });
+    this.clientConfigKey = nextConfigKey;
+    logger.log('[BookmarkAPI] API 客户端已初始化:', { apiBaseUrl });
   }
 
   private async notifyWebAppDataChanged(): Promise<void> {
@@ -94,10 +100,8 @@ export class BookmarkAPIClient {
   }
 
   private async ensureClient(): Promise<ReturnType<typeof createTMarksClient>> {
-    // 每次都重新初始化，确保使用最新的 API Key
-    // 这样可以避免 API Key 更新后客户端仍使用旧的 Key
     await this.initialize();
-    
+
     if (!this.client) {
       throw new AppError(
         'API_KEY_INVALID' as ErrorCode,
@@ -391,43 +395,16 @@ export class BookmarkAPIClient {
       }>;
     }
   ): Promise<void> {
-    await this.ensureClient();
+    const client = await this.ensureClient();
 
     try {
-      // 使用 V2 API 端点
-      const apiKey = await StorageService.getBookmarkSiteApiKey();
-      const configuredUrl = await StorageService.getBookmarkSiteApiUrl();
-      
-      let apiBaseUrl: string;
-      if (configuredUrl) {
-        if (configuredUrl.endsWith('/api')) {
-          apiBaseUrl = configuredUrl;
-        } else {
-          apiBaseUrl = getTMarksUrls(configuredUrl).API_BASE;
-        }
-      } else {
-        apiBaseUrl = getTMarksUrls().API_BASE;
-      }
-
-      const response = await fetch(`${apiBaseUrl}/tab/bookmarks/${bookmarkId}/snapshots-v2`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Key': apiKey!,
-        },
-        body: JSON.stringify(data),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error?.message || 'Failed to create snapshot');
-      }
-
+      await client.snapshots.createSnapshotV2(bookmarkId, data);
       await this.notifyWebAppDataChanged();
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : '快照创建失败';
       throw new AppError(
         'BOOKMARK_SITE_ERROR' as ErrorCode,
-        `Failed to create snapshot (V2): ${error.message}`,
+        `创建快照失败（V2）：${message}`,
         { originalError: error }
       );
     }

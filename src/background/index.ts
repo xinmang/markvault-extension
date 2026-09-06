@@ -80,63 +80,59 @@ chrome.bookmarks.onMoved.addListener((id) => {
   });
 });
 
-// Auto-sync cache periodically
-function getMsUntilNextDailySync(): number {
+// 使用 chrome.alarms 调度后台任务，避免 Service Worker 休眠后 setTimeout 失效。
+const AUTO_SYNC_ALARM = 'markvault-auto-sync';
+const PINNED_REFRESH_ALARM = 'markvault-pinned-refresh';
+const DAILY_MINUTES = 24 * 60;
+
+function getNextDailyTimestamp(hour: number): number {
   const now = new Date();
   const target = new Date(now);
-  target.setHours(23, 0, 0, 0);
-  if (target <= now) {
+  target.setHours(hour, 0, 0, 0);
+  if (target.getTime() <= now.getTime()) {
     target.setDate(target.getDate() + 1);
   }
-  return target.getTime() - now.getTime();
+  return target.getTime();
 }
 
-async function runAutoSync() {
-  try {
-    const config = await StorageService.loadConfig();
-    if (!config.preferences.autoSync) {
-      return;
-    }
-    await cacheManager.autoSync(config.preferences.syncInterval);
-  } catch (error) {
-    logger.error('[Background] Auto-sync failed:', error);
+let autoSyncPromise: Promise<void> | null = null;
+
+async function runAutoSync(): Promise<void> {
+  if (autoSyncPromise) {
+    return autoSyncPromise;
   }
-}
 
-async function startAutoSync() {
-  const scheduleNext = () => {
-    const delay = getMsUntilNextDailySync();
-    setTimeout(async () => {
-      await runAutoSync();
-      scheduleNext();
-    }, delay);
-  };
-  scheduleNext();
-}
-
-startAutoSync().catch((error) => {
-  logger.error('[Background] Failed to start auto-sync:', error);
-});
-
-// Sync pending bookmarks on startup
-bookmarkService.syncPendingBookmarks().catch((error) => {
-  logger.error('[Background] Failed to sync pending bookmarks:', error);
-});
-
-// Sync pending tab groups on startup
-(async () => {
-  try {
-    const config = await StorageService.loadConfig();
-    if (config.bookmarkSite.apiKey) {
-      await syncPendingTabGroups(config.bookmarkSite);
+  autoSyncPromise = (async () => {
+    try {
+      const config = await StorageService.loadConfig();
+      if (!config.preferences.autoSync) {
+        return;
+      }
+      await cacheManager.autoSync(config.preferences.syncInterval);
+    } catch (error) {
+      logger.error('[Background] Auto-sync failed:', error);
+    } finally {
+      autoSyncPromise = null;
     }
-  } catch (error) {
-    logger.error('[Background] Failed to sync pending tab groups:', error);
-  }
-})();
+  })();
 
-// 定时刷新置顶书签
-async function refreshPinnedBookmarksCache() {
+  return autoSyncPromise;
+}
+
+async function scheduleAutoSyncAlarm(): Promise<void> {
+  await chrome.alarms.clear(AUTO_SYNC_ALARM);
+  const config = await StorageService.loadConfig();
+  if (!config.preferences.autoSync) {
+    return;
+  }
+
+  await chrome.alarms.create(AUTO_SYNC_ALARM, {
+    when: getNextDailyTimestamp(23),
+    periodInMinutes: DAILY_MINUTES,
+  });
+}
+
+async function refreshPinnedBookmarksCache(): Promise<void> {
   try {
     logger.log('[Background] 开始刷新置顶书签缓存');
     await chrome.storage.local.remove('tmarks_pinned_bookmarks_cache');
@@ -154,55 +150,81 @@ async function refreshPinnedBookmarksCache() {
   }
 }
 
-function getMsUntilNextRefresh(refreshTime: 'morning' | 'evening'): number {
-  const now = new Date();
-  const target = new Date(now);
-  if (refreshTime === 'morning') {
-    target.setHours(8, 0, 0, 0);
-  } else {
-    target.setHours(22, 0, 0, 0);
-  }
-  if (target <= now) {
-    target.setDate(target.getDate() + 1);
-  }
-  return target.getTime() - now.getTime();
-}
-
-async function startPinnedBookmarksAutoRefresh() {
-  const scheduleNext = async () => {
-    try {
-      const result = await chrome.storage.local.get('newtab');
-      interface NewtabData {
-        settings?: {
-          autoRefreshPinnedBookmarks?: boolean;
-          pinnedBookmarksRefreshTime?: 'morning' | 'evening';
-        };
-      }
-      const newtabData = result.newtab as NewtabData | undefined;
-      if (!newtabData?.settings?.autoRefreshPinnedBookmarks) {
-        setTimeout(scheduleNext, 60 * 60 * 1000);
-        return;
-      }
-      const refreshTime = newtabData.settings.pinnedBookmarksRefreshTime || 'morning';
-      const delay = getMsUntilNextRefresh(refreshTime);
-      logger.log(
-        `[Background] 下次置顶书签刷新时间: ${refreshTime === 'morning' ? '早上 8:00' : '晚上 22:00'}, 距离: ${Math.round(delay / 1000 / 60)} 分钟`
-      );
-      setTimeout(async () => {
-        await refreshPinnedBookmarksCache();
-        scheduleNext();
-      }, delay);
-    } catch (error) {
-      logger.error('[Background] Failed to schedule pinned bookmarks refresh:', error);
-      setTimeout(scheduleNext, 60 * 60 * 1000);
-    }
+interface NewtabSettingsData {
+  settings?: {
+    autoRefreshPinnedBookmarks?: boolean;
+    pinnedBookmarksRefreshTime?: 'morning' | 'evening';
   };
-  scheduleNext();
 }
 
-startPinnedBookmarksAutoRefresh().catch((error) => {
-  logger.error('[Background] Failed to start pinned bookmarks auto-refresh:', error);
+async function schedulePinnedBookmarksAlarm(): Promise<void> {
+  await chrome.alarms.clear(PINNED_REFRESH_ALARM);
+
+  const result = await chrome.storage.local.get('newtab');
+  const newtabData = result.newtab as NewtabSettingsData | undefined;
+  if (!newtabData?.settings?.autoRefreshPinnedBookmarks) {
+    return;
+  }
+
+  const refreshTime = newtabData.settings.pinnedBookmarksRefreshTime || 'morning';
+  await chrome.alarms.create(PINNED_REFRESH_ALARM, {
+    when: getNextDailyTimestamp(refreshTime === 'morning' ? 8 : 22),
+    periodInMinutes: DAILY_MINUTES,
+  });
+}
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === AUTO_SYNC_ALARM) {
+    void runAutoSync();
+    return;
+  }
+
+  if (alarm.name === PINNED_REFRESH_ALARM) {
+    void refreshPinnedBookmarksCache();
+  }
 });
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== 'local') {
+    return;
+  }
+
+  if (changes.config) {
+    void scheduleAutoSyncAlarm().catch((error) => {
+      logger.error('[Background] Failed to reschedule auto-sync:', error);
+    });
+  }
+
+  if (changes.newtab) {
+    void schedulePinnedBookmarksAlarm().catch((error) => {
+      logger.error('[Background] Failed to reschedule pinned bookmarks refresh:', error);
+    });
+  }
+});
+
+void scheduleAutoSyncAlarm().catch((error) => {
+  logger.error('[Background] Failed to schedule auto-sync:', error);
+});
+void schedulePinnedBookmarksAlarm().catch((error) => {
+  logger.error('[Background] Failed to schedule pinned bookmarks refresh:', error);
+});
+
+// 启动时同步离线待处理书签
+bookmarkService.syncPendingBookmarks().catch((error) => {
+  logger.error('[Background] Failed to sync pending bookmarks:', error);
+});
+
+// 启动时同步待处理标签页组
+(async () => {
+  try {
+    const config = await StorageService.loadConfig();
+    if (config.bookmarkSite.apiKey) {
+      await syncPendingTabGroups(config.bookmarkSite);
+    }
+  } catch (error) {
+    logger.error('[Background] Failed to sync pending tab groups:', error);
+  }
+})();
 
 logger.log('[BG] init', {
   runtimeId: chrome.runtime.id,

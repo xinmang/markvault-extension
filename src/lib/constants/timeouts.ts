@@ -22,6 +22,9 @@ export const TIMEOUTS = {
   /** 长延迟 - 用于需要等待的操作 */
   LONG: 5000,
   
+  /** API 请求超时 */
+  API_REQUEST: 10000,
+
   /** AI 推荐超时 */
   AI_RECOMMEND: 35000,
   

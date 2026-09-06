@@ -36,6 +36,17 @@ export interface CreateSnapshotResponse {
   };
 }
 
+export interface CreateSnapshotV2Request {
+  html_content: string;
+  title: string;
+  url: string;
+  images: Array<{
+    hash: string;
+    data: string;
+    type: string;
+  }>;
+}
+
 export class SnapshotsAPI extends TMarksClient {
   /**
    * 创建书签快照
@@ -43,6 +54,17 @@ export class SnapshotsAPI extends TMarksClient {
    */
   async createSnapshot(bookmarkId: string, data: CreateSnapshotRequest): Promise<CreateSnapshotResponse> {
     return this.post<CreateSnapshotResponse>(`/tab/bookmarks/${bookmarkId}/snapshots`, data);
+  }
+
+  /**
+   * 创建带独立图片资源的 V2 快照。
+   * 图片会由服务端按 hash 去重，避免重复上传。
+   */
+  async createSnapshotV2(
+    bookmarkId: string,
+    data: CreateSnapshotV2Request
+  ): Promise<CreateSnapshotResponse> {
+    return this.post<CreateSnapshotResponse>(`/tab/bookmarks/${bookmarkId}/snapshots-v2`, data);
   }
 
   /**

@@ -1,14 +1,18 @@
 /**
- * TMarks API 基础客户端
- * 处理 HTTP 请求、认证、错误处理、速率限制
+ * MarkVault API 基础客户端
+ * 负责 HTTP 请求、认证、错误处理和请求生命周期管理。
  */
 
 import type { TMarksError, RateLimitInfo } from './types';
+import { normalizeApiUrl } from '@/lib/constants/urls';
+import { TIMEOUTS } from '@/lib/constants/timeouts';
 import { logger } from '@/lib/utils/logger';
 
 export interface TMarksClientConfig {
   apiKey: string;
   baseUrl?: string;
+  /** 请求超时时间，默认 10 秒。 */
+  requestTimeoutMs?: number;
 }
 
 export class TMarksAPIError extends Error {
@@ -21,14 +25,14 @@ export class TMarksAPIError extends Error {
   ) {
     super(message);
     this.name = 'TMarksAPIError';
+    Object.setPrototypeOf(this, new.target.prototype);
   }
 
-  // 便捷方法检查错误类型
   isAuthError(): boolean {
     return [
       'MISSING_API_KEY',
       'INVALID_API_KEY',
-      'INSUFFICIENT_PERMISSIONS'
+      'INSUFFICIENT_PERMISSIONS',
     ].includes(this.code);
   }
 
@@ -50,111 +54,85 @@ export class TMarksAPIError extends Error {
 }
 
 export class TMarksClient {
-  private apiKey: string;
-  private baseUrl: string;
+  private readonly apiKey: string;
+  private readonly baseUrl: string;
+  private readonly requestTimeoutMs: number;
   private rateLimitInfo: RateLimitInfo | null = null;
 
   constructor(config: TMarksClientConfig) {
-    this.apiKey = config.apiKey;
-    this.baseUrl = config.baseUrl || 'http://localhost:8787/api';
+    this.apiKey = config.apiKey.trim();
+    this.baseUrl = normalizeApiUrl(config.baseUrl || '');
+    this.requestTimeoutMs = Number.isFinite(config.requestTimeoutMs) && (config.requestTimeoutMs ?? 0) > 0
+      ? Math.floor(config.requestTimeoutMs as number)
+      : TIMEOUTS.API_REQUEST;
   }
 
-  /**
-   * 获取速率限制信息
-   */
+  /** 获取最近一次响应中的速率限制信息。 */
   getRateLimitInfo(): RateLimitInfo | null {
     return this.rateLimitInfo;
   }
 
-  /**
-   * 检查是否接近速率限制
-   */
-  isNearRateLimit(threshold: number = 0.2): boolean {
-    if (!this.rateLimitInfo) return false;
+  /** 检查是否接近速率限制。 */
+  isNearRateLimit(threshold = 0.2): boolean {
+    if (!this.rateLimitInfo || this.rateLimitInfo.limit <= 0) return false;
     return this.rateLimitInfo.remaining / this.rateLimitInfo.limit < threshold;
   }
 
-  /**
-   * 获取速率限制重置时间
-   */
+  /** 获取速率限制重置时间。 */
   getRateLimitResetTime(): Date | null {
     if (!this.rateLimitInfo) return null;
     return new Date(this.rateLimitInfo.reset * 1000);
   }
 
   /**
-   * 发起 HTTP 请求
+   * 发起 HTTP 请求。
+   * 使用 AbortController 统一处理超时，并保留调用方传入的取消信号。
    */
-  protected async request<T>(
-    endpoint: string,
-    options: RequestInit = {}
-  ): Promise<T> {
-    const url = `${this.baseUrl}${endpoint}`;
+  protected async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+    const url = this.buildUrl(endpoint);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.requestTimeoutMs);
+    const externalSignal = options.signal;
+    const abortFromExternalSignal = () => controller.abort();
 
-    const headers = {
-      'X-API-Key': this.apiKey,
-      'Content-Type': 'application/json',
-      ...options.headers,
-    };
+    if (externalSignal) {
+      if (externalSignal.aborted) {
+        controller.abort();
+      } else {
+        externalSignal.addEventListener('abort', abortFromExternalSignal, { once: true });
+      }
+    }
+
+    const headers = new Headers(options.headers);
+    headers.set('X-API-Key', this.apiKey);
+    if (!headers.has('Accept')) {
+      headers.set('Accept', 'application/json');
+    }
+    if (options.body !== undefined && !headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json');
+    }
 
     logger.log('[TMarksClient] 发起请求:', {
-      url,
+      endpoint,
       method: options.method || 'GET',
-      hasApiKey: !!this.apiKey,
-      apiKeyPrefix: this.apiKey ? this.apiKey.substring(0, 8) + '...' : 'none'
     });
 
     try {
       const response = await fetch(url, {
         ...options,
         headers,
+        signal: controller.signal,
       });
 
-      logger.log('[TMarksClient] 响应状态:', {
-        status: response.status,
-        statusText: response.statusText,
-        ok: response.ok
-      });
-
-      // 提取速率限制信息
       this.extractRateLimitInfo(response);
+      const data = await this.parseResponse(response);
 
-      // 处理 204 No Content
-      if (response.status === 204) {
-        return undefined as T;
-      }
-
-      // 尝试解析响应
-      let data: unknown;
-      const contentType = response.headers.get('content-type');
-      
-      if (contentType && contentType.includes('application/json')) {
-        data = await response.json();
-      } else {
-        // 非 JSON 响应，尝试读取文本
-        const text = await response.text();
-        logger.error('[TMarksClient] 非 JSON 响应:', { status: response.status, text: text.substring(0, 200) });
-        
-        if (!response.ok) {
-          throw new TMarksAPIError(
-            response.status === 401 ? 'INVALID_API_KEY' : 'UNKNOWN_ERROR',
-            text || `HTTP ${response.status}: ${response.statusText}`,
-            response.status
-          );
-        }
-        
-        // 尝试解析为 JSON
-        try {
-          data = JSON.parse(text);
-        } catch {
-          data = { message: text };
-        }
-      }
-
-      // 处理错误响应
       if (!response.ok) {
-        logger.error('[TMarksClient] 错误响应数据:', data);
-        this.handleErrorResponse(response.status, data);
+        this.handleErrorResponse(
+          response.status,
+          data,
+          this.parseRetryAfter(response.headers.get('Retry-After'))
+        );
       }
 
       return data as T;
@@ -163,150 +141,181 @@ export class TMarksClient {
         throw error;
       }
 
-      // 网络错误或其他错误
+      if (
+        (error instanceof DOMException || error instanceof Error) &&
+        error.name === 'AbortError'
+      ) {
+        throw new TMarksAPIError(
+          'REQUEST_TIMEOUT',
+          '请求超时，请检查网络连接后重试',
+          0
+        );
+      }
+
       if (error instanceof TypeError) {
         logger.error('[TMarksClient] 网络错误:', error);
         throw new TMarksAPIError(
           'NETWORK_ERROR',
-          'Network error: Unable to connect to TMarks API',
+          '网络连接失败，无法访问 MarkVault 服务',
           0,
-          { originalError: error }
+          { originalError: error.message }
         );
       }
 
       logger.error('[TMarksClient] 未知错误:', error);
       throw new TMarksAPIError(
         'UNKNOWN_ERROR',
-        error instanceof Error ? error.message : 'Unknown error occurred',
+        error instanceof Error ? error.message : '请求失败',
         0,
-        { originalError: error }
+        { originalError: error instanceof Error ? error.message : String(error) }
       );
+    } finally {
+      clearTimeout(timeoutId);
+      externalSignal?.removeEventListener('abort', abortFromExternalSignal);
     }
   }
 
-  /**
-   * GET 请求
-   */
-  protected async get<T>(endpoint: string, params?: Record<string, any>): Promise<T> {
-    const queryString = params ? `?${new URLSearchParams(this.cleanParams(params)).toString()}` : '';
-    return this.request<T>(`${endpoint}${queryString}`, {
-      method: 'GET',
-    });
+  /** GET 请求。 */
+  protected async get<T>(endpoint: string, params?: object): Promise<T> {
+    const queryString = params ? this.buildQueryString(params) : '';
+    return this.request<T>(`${endpoint}${queryString}`, { method: 'GET' });
   }
 
-  /**
-   * POST 请求
-   */
-  protected async post<T>(endpoint: string, body?: Record<string, unknown>): Promise<T> {
+  /** POST 请求。 */
+  protected async post<T>(endpoint: string, body?: object): Promise<T> {
     return this.request<T>(endpoint, {
       method: 'POST',
-      body: body ? JSON.stringify(body) : undefined,
+      body: body === undefined ? undefined : JSON.stringify(body),
     });
   }
 
-  /**
-   * PATCH 请求
-   */
-  protected async patch<T>(endpoint: string, body: Record<string, unknown>): Promise<T> {
+  /** PATCH 请求。 */
+  protected async patch<T>(endpoint: string, body: object): Promise<T> {
     return this.request<T>(endpoint, {
       method: 'PATCH',
       body: JSON.stringify(body),
     });
   }
 
-  /**
-   * DELETE 请求
-   */
-  protected async delete<T>(endpoint: string, body?: Record<string, unknown>): Promise<T> {
+  /** DELETE 请求。 */
+  protected async delete<T>(endpoint: string, body?: object): Promise<T> {
     return this.request<T>(endpoint, {
       method: 'DELETE',
-      body: body ? JSON.stringify(body) : undefined,
+      body: body === undefined ? undefined : JSON.stringify(body),
     });
   }
 
-  /**
-   * 提取速率限制信息
-   */
-  private extractRateLimitInfo(response: Response): void {
-    const limit = response.headers.get('X-RateLimit-Limit');
-    const remaining = response.headers.get('X-RateLimit-Remaining');
-    const reset = response.headers.get('X-RateLimit-Reset');
+  private buildUrl(endpoint: string): string {
+    const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+    return `${this.baseUrl}${normalizedEndpoint}`;
+  }
 
-    if (limit && remaining && reset) {
-      this.rateLimitInfo = {
-        limit: parseInt(limit, 10),
-        remaining: parseInt(remaining, 10),
-        reset: parseInt(reset, 10),
-      };
+  private buildQueryString(params: object): string {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(params as Record<string, unknown>)) {
+      if (value === undefined || value === null || value === '') continue;
+      query.set(key, String(value));
+    }
+    const serialized = query.toString();
+    return serialized ? `?${serialized}` : '';
+  }
+
+  private async parseResponse(response: Response): Promise<unknown> {
+    if (response.status === 204) {
+      return undefined;
+    }
+
+    const text = await response.text();
+    if (!text.trim()) {
+      return undefined;
+    }
+
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('json') || /^[\[{]/.test(text.trim())) {
+      try {
+        return JSON.parse(text) as unknown;
+      } catch {
+        if (!response.ok) {
+          return text;
+        }
+      }
+    }
+
+    return response.ok ? { message: text } : text;
+  }
+
+  private extractRateLimitInfo(response: Response): void {
+    const limit = this.parseHeaderNumber(response.headers.get('X-RateLimit-Limit'));
+    const remaining = this.parseHeaderNumber(response.headers.get('X-RateLimit-Remaining'));
+    const reset = this.parseHeaderNumber(response.headers.get('X-RateLimit-Reset'));
+
+    if (limit !== null && remaining !== null && reset !== null && limit >= 0 && remaining >= 0 && reset >= 0) {
+      this.rateLimitInfo = { limit, remaining, reset };
     }
   }
 
-  /**
-   * 处理错误响应
-   */
-  private handleErrorResponse(status: number, errorData: TMarksError | unknown): never {
-    // 安全地提取错误信息，处理各种可能的响应格式
+  private parseRetryAfter(value: string | null): number | undefined {
+    if (!value) return undefined;
+    const seconds = Number(value);
+    if (Number.isFinite(seconds)) return Math.max(0, seconds);
+
+    const timestamp = Date.parse(value);
+    if (Number.isNaN(timestamp)) return undefined;
+    return Math.max(0, Math.ceil((timestamp - Date.now()) / 1000));
+  }
+
+  private parseHeaderNumber(value: string | null): number | null {
+    if (!value) return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  private handleErrorResponse(
+    status: number,
+    errorData: unknown,
+    retryAfterHeader?: number
+  ): never {
     let code = 'UNKNOWN_ERROR';
-    let message = 'Unknown error occurred';
-    let details: Record<string, unknown> | undefined = undefined;
-    let retry_after: number | undefined = undefined;
+    let message = `请求失败（HTTP ${status}）`;
+    let details: Record<string, unknown> | undefined;
+    let retryAfter = retryAfterHeader;
 
     if (errorData && typeof errorData === 'object' && 'error' in errorData) {
-      const err = errorData as TMarksError;
-      // 标准 TMarks 错误格式
-      code = err.error.code || code;
-      message = err.error.message || message;
-      details = err.error.details;
-      retry_after = err.error.retry_after;
-    } else if (typeof errorData === 'string') {
-      // 纯文本错误
+      const errorPayload = (errorData as TMarksError).error;
+      if (errorPayload && typeof errorPayload === 'object') {
+        code = errorPayload.code || code;
+        message = errorPayload.message || message;
+        details = errorPayload.details;
+        retryAfter = errorPayload.retry_after ?? retryAfter;
+      }
+    } else if (typeof errorData === 'string' && errorData.trim()) {
       message = errorData;
     } else if (errorData && typeof errorData === 'object') {
-      // 简单对象格式
-      const data = errorData as Record<string, unknown>;
-      if (typeof data.message === 'string') {
-        message = data.message;
+      const payload = errorData as Record<string, unknown>;
+      if (typeof payload.message === 'string' && payload.message.trim()) {
+        message = payload.message;
       }
-      if (typeof data.code === 'string') {
-        code = data.code;
-      }
-    }
-
-    // 根据 HTTP 状态码推断错误类型
-    if (status === 401 && code === 'UNKNOWN_ERROR') {
-      code = 'INVALID_API_KEY';
-      message = message || 'Authentication failed';
-    } else if (status === 403 && code === 'UNKNOWN_ERROR') {
-      code = 'INSUFFICIENT_PERMISSIONS';
-      message = message || 'Permission denied';
-    } else if (status === 429 && code === 'UNKNOWN_ERROR') {
-      code = 'RATE_LIMIT_EXCEEDED';
-      message = message || 'Rate limit exceeded';
-    }
-
-    logger.error('[TMarksClient] API Error:', { status, code, message, details });
-
-    throw new TMarksAPIError(
-      code,
-      message,
-      status,
-      details,
-      retry_after
-    );
-  }
-
-  /**
-   * 清理参数（移除 undefined 值）
-   */
-  private cleanParams(params: Record<string, any>): Record<string, string> {
-    const cleaned: Record<string, string> = {};
-
-    for (const [key, value] of Object.entries(params)) {
-      if (value !== undefined && value !== null) {
-        cleaned[key] = String(value);
+      if (typeof payload.code === 'string' && payload.code.trim()) {
+        code = payload.code;
       }
     }
 
-    return cleaned;
+    const inferredCodeByStatus: Record<number, string> = {
+      400: 'BAD_REQUEST',
+      401: 'INVALID_API_KEY',
+      403: 'INSUFFICIENT_PERMISSIONS',
+      404: 'NOT_FOUND',
+      409: 'CONFLICT',
+      429: 'RATE_LIMIT_EXCEEDED',
+    };
+    if (code === 'UNKNOWN_ERROR' && inferredCodeByStatus[status]) {
+      code = inferredCodeByStatus[status];
+    }
+    if (code === 'UNKNOWN_ERROR' && status >= 500) {
+      code = 'INTERNAL_ERROR';
+    }
+
+    logger.error('[TMarksClient] API 错误:', { status, code, message });
+    throw new TMarksAPIError(code, message, status, details, retryAfter);
   }
 }
