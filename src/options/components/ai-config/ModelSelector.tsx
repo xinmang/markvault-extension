@@ -26,6 +26,7 @@ const modelPlaceholders: Record<AIProvider, string> = {
   modelscope: 'qwen-plus or qwen-turbo',
   siliconflow: 'Qwen/Qwen2.5-7B-Instruct',
   iflow: 'spark-lite or spark-pro',
+  typesafe: 'jev-latest (recommended) or jev-preview',
   custom: 'Enter model name',
 };
 

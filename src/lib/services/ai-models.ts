@@ -1,14 +1,19 @@
 import type { AIProvider } from '@/types';
 import { AI_SERVICE_URLS } from '@/lib/constants/urls';
 import { t } from '@/lib/i18n';
+import { listTypeSafeModels } from './typesafe-client';
 
 const PROVIDER_DEFAULT_BASE_URL: Partial<Record<AIProvider, string>> = {
   openai: AI_SERVICE_URLS.OPENAI,
   deepseek: AI_SERVICE_URLS.DEEPSEEK,
-  siliconflow: AI_SERVICE_URLS.SILICONFLOW
+  siliconflow: AI_SERVICE_URLS.SILICONFLOW,
+  typesafe: AI_SERVICE_URLS.TYPESAFE
 };
 
 const OPENAI_COMPATIBLE_PROVIDERS = new Set<AIProvider>(['openai', 'deepseek', 'siliconflow', 'custom']);
+
+/** TypeSafe 使用 GET /v1/models，响应结构为 { models: [{ name, ... }] }，与 OpenAI 系不同 */
+const TYPESAFE_PROVIDERS = new Set<AIProvider>(['typesafe']);
 
 const sanitizeBaseUrl = (baseUrl: string): string => {
   const trimmed = baseUrl.trim();
@@ -68,6 +73,10 @@ const fetchOpenAIStyleModels = async (baseUrl: string, apiKey: string): Promise<
 };
 
 export const canFetchModels = (provider: AIProvider, apiUrl?: string): boolean => {
+  if (TYPESAFE_PROVIDERS.has(provider)) {
+    return true;
+  }
+
   if (!OPENAI_COMPATIBLE_PROVIDERS.has(provider)) {
     return false;
   }
@@ -85,12 +94,16 @@ export async function fetchAvailableModels(
   apiKey: string,
   apiUrl?: string
 ): Promise<string[]> {
-  if (!OPENAI_COMPATIBLE_PROVIDERS.has(provider)) {
-    throw new Error(t('error_provider_not_supported'));
-  }
-
   if (!apiKey.trim()) {
     throw new Error(t('error_missing_api_key'));
+  }
+
+  if (TYPESAFE_PROVIDERS.has(provider)) {
+    return listTypeSafeModels(apiKey, resolveBaseUrl(provider, apiUrl));
+  }
+
+  if (!OPENAI_COMPATIBLE_PROVIDERS.has(provider)) {
+    throw new Error(t('error_provider_not_supported'));
   }
 
   const baseUrl = resolveBaseUrl(provider, apiUrl);

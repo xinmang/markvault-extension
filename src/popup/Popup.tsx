@@ -4,15 +4,13 @@
 
 import { useEffect } from 'react';
 import { useAppStore } from '@/lib/store';
-import { ErrorMessage } from '@/components/ErrorMessage';
-import { SuccessMessage } from '@/components/SuccessMessage';
-import { LoadingMessage } from '@/components/LoadingMessage';
 import { BookmarkExistsDialog } from '@/components/BookmarkExistsDialog';
 import { ModeSelector } from './ModeSelector';
 import { TabCollectionView } from './TabCollectionView';
 import { NewtabModeView } from './components/NewtabModeView';
 import { BookmarkModeView } from './components/BookmarkModeView';
 import { OnboardingView } from './components/OnboardingView';
+import { NotificationBar } from './components/NotificationBar';
 import { useNewtabState } from './hooks/useNewtabState';
 import { usePopupState, useTitleSync, useDescriptionSync } from './hooks/usePopupState';
 import { useBookmarkHandlers } from './hooks/useBookmarkHandlers';
@@ -164,17 +162,10 @@ export function Popup() {
 
   // Main view (bookmark or newtab mode)
   return (
-    <div className="relative h-[80vh] min-h-[620px] w-[380px] overflow-hidden rounded-2xl bg-[var(--tab-popup-surface)] text-[var(--tab-popup-text)] shadow-2xl">
-      {/* Notifications */}
-      <div className="pointer-events-none fixed top-0 left-0 right-0 z-50 space-y-2 px-4 pt-2">
-        {error && <div className="pointer-events-auto"><ErrorMessage message={error} onDismiss={() => setError(null)} onRetry={!isLoading && lastRecommendationSource === 'fallback' ? recommendTags : undefined} /></div>}
-        {loadingMessage && <div className="pointer-events-auto"><LoadingMessage message={loadingMessage} /></div>}
-        {successMessage && <div className="pointer-events-auto"><SuccessMessage message={successMessage} /></div>}
-      </div>
-
+    <div className="relative h-[600px] max-h-screen w-[380px] overflow-hidden rounded-2xl bg-[var(--tab-popup-surface)] text-[var(--tab-popup-text)] shadow-2xl">
       <div className="relative flex h-full flex-col">
         {/* Header */}
-        <header className="fixed top-0 left-0 right-0 z-20 border-b border-[var(--tab-popup-border)] bg-[var(--tab-popup-surface)] px-3 pt-2 pb-2.5 shadow-sm">
+        <header className="relative z-20 shrink-0 border-b border-[var(--tab-popup-border)] bg-[var(--tab-popup-surface)] px-3 pt-2 pb-2.5 shadow-sm">
           <div className="flex items-center gap-2">
             <button onClick={handleBackToSelector} className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg text-[var(--tab-popup-text-muted)] transition-all hover:bg-[var(--tab-popup-action-neutral-bg)] active:scale-95" title={t('popup_back')}>
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
@@ -190,7 +181,7 @@ export function Popup() {
             <div className="ml-auto flex gap-1.5">
               <button onClick={() => window.close()} className="rounded-lg border border-[var(--tab-popup-border-strong)] bg-[var(--tab-popup-surface)] px-3 py-1.5 text-[11px] font-medium text-[var(--tab-popup-text)] transition-all hover:bg-[var(--tab-popup-action-neutral-bg)] active:scale-95">{t('btn_cancel')}</button>
               {popupState.viewMode === 'bookmark' ? (
-                <button onClick={bookmarkHandlers.handleSave} disabled={isSaving || selectedTags.length === 0} className="rounded-lg bg-gradient-to-r from-[var(--tab-popup-primary-from)] to-[var(--tab-popup-primary-via)] px-4 py-1.5 text-[11px] font-semibold text-[var(--tab-popup-primary-text)] shadow-sm transition-all hover:shadow-md disabled:cursor-not-allowed disabled:opacity-40 active:scale-95">
+                <button onClick={bookmarkHandlers.handleSave} disabled={isSaving || !currentPage?.url || selectedTags.length === 0} className="rounded-lg bg-gradient-to-r from-[var(--tab-popup-primary-from)] to-[var(--tab-popup-primary-via)] px-4 py-1.5 text-[11px] font-semibold text-[var(--tab-popup-primary-text)] shadow-sm transition-all hover:shadow-md disabled:cursor-not-allowed disabled:opacity-40 active:scale-95">
                   {isSaving ? <span className="flex items-center gap-1"><svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" /></svg>{t('popup_saving')}</span> : t('popup_save_bookmark')}
                 </button>
               ) : (
@@ -202,7 +193,7 @@ export function Popup() {
 
         {/* NewTab 保存位置固定栏 */}
         {popupState.viewMode === 'newtab' && (
-          <div className="fixed top-[46px] left-0 right-0 z-20 border-b border-[var(--tab-popup-save-target-border)] bg-[var(--tab-popup-save-target-bg)] px-4 py-2">
+          <div className="shrink-0 border-b border-[var(--tab-popup-save-target-border)] bg-[var(--tab-popup-save-target-bg)] px-4 py-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <svg className="h-4 w-4 text-[var(--tab-popup-save-target-icon)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -221,8 +212,19 @@ export function Popup() {
           </div>
         )}
 
+        {/* 提示参与布局，避免覆盖保存按钮或正文。 */}
+        <NotificationBar
+          error={error}
+          loadingMessage={loadingMessage}
+          successMessage={successMessage}
+          lastRecommendationSource={lastRecommendationSource ?? undefined}
+          onDismissError={() => setError(null)}
+          onDismissSuccess={() => setSuccessMessage(null)}
+          onRetry={!isLoading ? recommendTags : undefined}
+        />
+
         {/* Main Content */}
-        <main className={`relative flex-1 overflow-hidden bg-[var(--tab-popup-bg)] px-4 ${popupState.viewMode === 'newtab' ? 'flex flex-col pt-[90px] pb-4' : 'space-y-2.5 overflow-y-auto pt-[60px] pb-[70px]'}`}>
+        <main className={`relative min-h-0 flex-1 overflow-hidden bg-[var(--tab-popup-bg)] px-4 pt-3 pb-4 ${popupState.viewMode === 'newtab' ? 'flex flex-col' : 'space-y-2.5 overflow-y-auto'}`}>
           {/* NewTab Mode */}
           {popupState.viewMode === 'newtab' && (
             <NewtabModeView
@@ -275,7 +277,7 @@ export function Popup() {
 
         {/* Footer - Custom Tag Input (only for bookmark mode) */}
         {popupState.viewMode === 'bookmark' && (
-          <footer className="fixed bottom-0 left-0 right-0 z-20 rounded-t-2xl border-t border-[var(--tab-popup-footer-border)] bg-[var(--tab-popup-footer-bg)] px-3 pt-2 pb-2.5 shadow-sm">
+          <footer className="shrink-0 rounded-t-2xl border-t border-[var(--tab-popup-footer-border)] bg-[var(--tab-popup-footer-bg)] px-3 pt-2 pb-2.5 shadow-sm">
             <div className="flex items-center gap-2">
               <svg className="h-4 w-4 flex-shrink-0 text-[var(--tab-popup-text-muted)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
               <input type="text" value={popupState.customTagInput} onChange={(e) => popupState.setCustomTagInput(e.target.value)} onKeyPress={(e) => bookmarkHandlers.handleKeyPress(e, popupState.customTagInput, popupState.setCustomTagInput)} placeholder={t('placeholder_add_tag')} className="flex-1 rounded-xl border border-[var(--tab-popup-input-border)] bg-[var(--tab-popup-input-bg)] px-3 py-1.5 text-sm text-[var(--tab-popup-input-text)] placeholder:text-[var(--tab-popup-input-placeholder)] focus:border-[var(--tab-popup-input-focus-border)] focus:outline-none focus:ring-2 focus:ring-[var(--tab-popup-input-focus-ring)]" />

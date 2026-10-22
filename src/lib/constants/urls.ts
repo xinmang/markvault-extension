@@ -64,6 +64,8 @@ export const AI_SERVICE_URLS = {
     MODELSCOPE: 'https://api-inference.modelscope.cn/v1',
     SILICONFLOW: 'https://api.siliconflow.cn/v1',
     IFLOW: 'https://apis.iflow.cn/v1',
+    // TypeSafe System One：POST /systemone 做结构化评估，GET /models 列出可用模型
+    TYPESAFE: 'https://api.typesafe.ai/v1',
 } as const;
 
 // AI 服务文档链接
@@ -75,6 +77,29 @@ export const AI_SERVICE_DOCS = {
     MODELSCOPE: 'https://www.modelscope.cn/my/myaccesstoken',
     SILICONFLOW: 'https://cloud.siliconflow.cn/account/ak',
     IFLOW: 'https://console.xfyun.cn/services/iat',
+    TYPESAFE: 'https://docs.typesafe.ai/api',
+} as const;
+
+// TypeSafe 相关默认值
+export const TYPESAFE_CONFIG = {
+    /** 官方旗舰模型别名，始终指向最新稳定版本 */
+    DEFAULT_MODEL: 'jev-latest',
+    /**
+     * 单次请求最多评估多少个候选（标签 / 文件夹路径）。
+     *
+     * 与标签库加载上限（200）对齐，保证 TypeSafe 是“从整个标签库里分拣”，
+     * 而不是只看前若干个。64k 上下文足以容纳 200 个 noul 问题；
+     * 官方文档也说明「增加问题几乎不改变响应时间，仅增加少量 token 成本」。
+     */
+    MAX_CANDIDATES: 200,
+    /**
+     * 丢弃阈值：noul 是“该标签适合这个页面”的概率，低于此值视为模型明确否定。
+     *
+     * 0.1 意味着模型有 90% 把握认为“不适合”。**不要再往上调**：
+     * 用户标签库里大量是“工具”“AI”这类通用大分类，得分天然不高，
+     * 阈值调高（例如 0.5）会把整个结果过滤成 0 个标签。
+     */
+    MIN_SCORE: 0.1,
 } as const;
 
 // 外部服务

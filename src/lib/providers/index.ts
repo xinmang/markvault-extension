@@ -7,6 +7,7 @@ import { ZhipuProvider } from './zhipu';
 import { ModelScopeProvider } from './modelscope';
 import { SiliconFlowProvider } from './siliconflow';
 import { IFlowProvider } from './iflow';
+import { TypeSafeProvider } from './typesafe';
 import { CustomProvider } from './custom';
 
 // Provider registry
@@ -18,6 +19,7 @@ const providers = new Map<AIProviderType, AIProvider>([
   ['modelscope', new ModelScopeProvider()],
   ['siliconflow', new SiliconFlowProvider()],
   ['iflow', new IFlowProvider()],
+  ['typesafe', new TypeSafeProvider()],
   ['custom', new CustomProvider()]
 ]);
 
@@ -39,4 +41,4 @@ export function getAllProviders(): AIProvider[] {
   return Array.from(providers.values());
 }
 
-export { AIProvider, OpenAIProvider, ClaudeProvider, DeepSeekProvider, ZhipuProvider, ModelScopeProvider, SiliconFlowProvider, IFlowProvider, CustomProvider };
+export { AIProvider, OpenAIProvider, ClaudeProvider, DeepSeekProvider, ZhipuProvider, ModelScopeProvider, SiliconFlowProvider, IFlowProvider, TypeSafeProvider, CustomProvider };

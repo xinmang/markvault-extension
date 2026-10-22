@@ -1,6 +1,9 @@
 import { db } from '@/lib/db';
 import { StorageService } from '@/lib/utils/storage';
 import { getAIProvider } from '@/lib/providers';
+import { normalizeTranslatedText } from '@/lib/utils/text';
+import { logger } from '@/lib/utils/logger';
+import { bookmarkAPI } from './bookmark-api';
 import type { PageInfo, RecommendationResult, AIRequest, TagSuggestion, AIResponse, AIProvider } from '@/types';
 
 export class TagRecommender {
@@ -76,10 +79,23 @@ export class TagRecommender {
 
       const tags = this.deduplicateAndSort(verifiedTags);
 
+      // 标题 / 描述的中文翻译：仅生成式模型会返回，且必须是中文才采用。
+      // TypeSafe(jev) 这类纯判定模型 supportsTranslation = false，直接跳过，
+      // 页面描述保持抓取到的原文。
+      const provider = getAIProvider(config.aiConfig.provider as AIProvider);
+      const translatedTitle = provider.supportsTranslation
+        ? normalizeTranslatedText(aiResponse.translatedTitle)
+        : undefined;
+      const translatedDescription = provider.supportsTranslation
+        ? normalizeTranslatedText(aiResponse.translatedDescription)
+        : undefined;
+
       return {
         tags,
         source: 'ai',
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        translatedTitle,
+        translatedDescription
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'AI recommendation failed';
@@ -287,7 +303,7 @@ export class TagRecommender {
       return this.contextCache;
     }
 
-    const [existingTags, recentBookmarks] = await Promise.all([
+    const [localTags, recentBookmarks] = await Promise.all([
       db.tags
         .orderBy('count')
         .reverse()
@@ -306,6 +322,33 @@ export class TagRecommender {
           }))
         )
     ]);
+
+    // db.tags 只有在执行过缓存同步（SYNC_CACHE → cacheManager.fullSync）之后才有数据。
+    // 若本地缓存为空，AI 上下文就会拿到空标签库 —— 界面上却能看到完整标签库。
+    // 对 TypeSafe 这类“只从已有标签库里分拣”的引擎，空标签库意味着永远推荐 0 个标签。
+    // 因此本地为空时回退到远端接口，保证 AI 与界面看到的是同一份标签库。
+    let existingTags = localTags;
+    if (existingTags.length === 0) {
+      try {
+        const remoteTags = await bookmarkAPI.getTags();
+        existingTags = remoteTags
+          .slice()
+          .sort((a, b) => (b.count || 0) - (a.count || 0))
+          .map(tag => tag.name)
+          .filter((name): name is string => Boolean(name && name.trim()))
+          .slice(0, 200);
+
+        if (existingTags.length > 0) {
+          logger.info(
+            `[TagRecommender] 本地标签缓存为空，已从远端获取 ${existingTags.length} 个标签作为 AI 上下文`
+          );
+        }
+      } catch (error) {
+        logger.warn('[TagRecommender] 远端标签库获取失败，AI 上下文标签库将为空', {
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+    }
 
     const context = {
       existingTags,

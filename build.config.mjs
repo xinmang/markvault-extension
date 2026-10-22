@@ -1,7 +1,7 @@
 /**
  * 浏览器扩展构建配置
  * 
- * 只构建 Chrome 版本（兼容所有 Chromium 内核浏览器）
+ * 构建面向现代 Chromium 浏览器的 Manifest V3 安装包。
  */
 
 export const buildConfig = {
@@ -21,7 +21,7 @@ export const buildConfig = {
       // 显示名称
       name: 'Chrome',
       // 描述
-      description: 'Google Chrome 及所有 Chromium 内核浏览器（Chrome、Edge、Brave、Opera、360、QQ、搜狗等）',
+      description: '面向支持 Manifest V3 的现代 Chromium 浏览器，其他浏览器需分别验证',
       // Manifest 文件路径
       manifest: 'manifest.json',
       // 输出文件名
@@ -32,14 +32,10 @@ export const buildConfig = {
       enabled: true,
       // 支持的浏览器列表
       supportedBrowsers: [
-        'Chrome 88+',
-        'Edge 88+',
-        'Brave 88+',
-        'Opera 74+',
-        '360浏览器',
-        'QQ浏览器',
-        '搜狗浏览器',
-        '其他 Chromium 内核浏览器'
+        'Chrome',
+        'Edge',
+        'Brave',
+        'Opera'
       ],
       // 分类
       category: 'chromium',
@@ -56,11 +52,6 @@ export const buildConfig = {
     clean: true,
   },
 
-  // 版本信息
-  version: {
-    number: '1.0.4',
-    date: '2026-03-03',
-  },
 }
 
 /**

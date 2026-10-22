@@ -1,0 +1,8 @@
+# 仅允许构建所需的原生依赖执行安装脚本。
+allowBuilds:
+  esbuild: true
+  sharp: true
+
+# Tailwind 3 的选择器解析器修复仅在 7.x 发布，构建验证覆盖兼容性。
+overrides:
+  postcss-selector-parser@<7.1.6: ^7.1.6

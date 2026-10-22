@@ -30,7 +30,6 @@
     "scripting",
     "notifications",
     "bookmarks",
-    "history",
     "alarms"
   ],
   "host_permissions": [

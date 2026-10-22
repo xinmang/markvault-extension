@@ -16,37 +16,13 @@ interface AppState extends
   TagActions,
   ConfigActions,
   BookmarkActions,
-  RecommendActions {
-  setCurrentPage: (page: any) => void;
-}
+  RecommendActions {}
 
 export const useAppStore = create<AppState>((set, get) => ({
   ...createUIActions(set),
-  ...createPageActions(set),
+  ...createPageActions(set, get),
   ...createTagActions(set, get),
   ...createConfigActions(set),
   ...createBookmarkActions(set, get),
   ...createRecommendActions(set, get),
-
-  setCurrentPage: (page) =>
-    set((state) => {
-      let includeThumbnail = false;
-      const defaultIncludeThumbnail = state.config?.preferences.defaultIncludeThumbnail ?? true;
-      const defaultIsPublic = state.config?.preferences.defaultIsPublic ?? true;
-      const isSamePage = state.currentPage && page && state.currentPage.url === page.url;
-
-      if (page) {
-        if (isSamePage) {
-          includeThumbnail = state.includeThumbnail && Boolean(page.thumbnail);
-        } else {
-          includeThumbnail = defaultIncludeThumbnail && Boolean(page.thumbnail);
-        }
-      }
-
-      return {
-        currentPage: page,
-        includeThumbnail,
-        isPublic: isSamePage ? state.isPublic : defaultIsPublic
-      };
-    }),
 }));

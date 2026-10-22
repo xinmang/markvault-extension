@@ -2,8 +2,16 @@
  * 页面信息提取处理器
  */
 
-import type { Message, MessageResponse } from '@/types';
+import type { Message, MessageResponse, PageInfo } from '@/types';
 import { TIMEOUTS } from '@/lib/constants/timeouts';
+import { getFallbackDescription, isSamePageUrl, normalizePageText } from '@/lib/utils/page-description';
+
+function basicPageInfo(title: string, url: string): MessageResponse<PageInfo> {
+  return {
+    success: true,
+    data: { title, url, description: getFallbackDescription({ title, url }), content: '', thumbnail: '' },
+  };
+}
 
 /**
  * 获取基本页面信息作为 fallback
@@ -11,27 +19,9 @@ import { TIMEOUTS } from '@/lib/constants/timeouts';
 async function getBasicPageInfo(tabId: number, fallbackUrl: string): Promise<MessageResponse> {
   try {
     const currentTab = await chrome.tabs.get(tabId);
-    return {
-      success: true,
-      data: {
-        title: currentTab.title || 'Untitled',
-        url: currentTab.url || '',
-        description: '',
-        content: '',
-        thumbnail: '',
-      },
-    };
+    return basicPageInfo(currentTab.title || 'Untitled', currentTab.url || fallbackUrl);
   } catch {
-    return {
-      success: true,
-      data: {
-        title: 'Untitled',
-        url: fallbackUrl,
-        description: '',
-        content: '',
-        thumbnail: '',
-      },
-    };
+    return basicPageInfo('Untitled', fallbackUrl);
   }
 }
 
@@ -43,12 +33,18 @@ async function sendMessageWithTimeout(
   msg: Message,
   timeoutMs: number = 3000
 ): Promise<MessageResponse> {
-  return Promise.race([
-    chrome.tabs.sendMessage(tabId, msg),
-    new Promise<MessageResponse>((_, reject) =>
-      setTimeout(() => reject(new Error('Message timeout')), timeoutMs)
-    ),
-  ]);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      // 只向主框架提取，防止子框架先响应并返回其他网站的信息。
+      chrome.tabs.sendMessage(tabId, msg, { frameId: 0 }),
+      new Promise<MessageResponse>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Message timeout')), timeoutMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
@@ -69,16 +65,7 @@ export async function handleExtractPageInfo(message: Message): Promise<MessageRe
     url.startsWith('about:') ||
     !url
   ) {
-    return {
-      success: true,
-      data: {
-        title: tab.title || 'Untitled',
-        url: url,
-        description: '',
-        content: '',
-        thumbnail: '',
-      },
-    };
+    return basicPageInfo(tab.title || 'Untitled', url);
   }
 
   // 步骤1: 检测 content script 是否存活
@@ -123,12 +110,24 @@ export async function handleExtractPageInfo(message: Message): Promise<MessageRe
   // 步骤3: 发送实际的提取请求
   if (isContentScriptAlive) {
     try {
-      const response = await sendMessageWithTimeout(tab.id, message, 5000);
+      // 导航可能发生在等待脚本响应期间；核对当前标签页，最多重取一次。
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const response = await sendMessageWithTimeout(tab.id, message, 5000);
+        const page = response.data as PageInfo | undefined;
+        if (!response.success || !page || typeof page.url !== 'string') break;
 
-      if (response.success && response.data) {
-        return response;
-      } else {
-        return await getBasicPageInfo(tab.id, url);
+        const currentTab = await chrome.tabs.get(tab.id);
+        if (isSamePageUrl(page.url, currentTab.url || '')) {
+          const title = normalizePageText(page.title) || currentTab.title || 'Untitled';
+          return {
+            success: true,
+            data: {
+              ...page,
+              title,
+              description: normalizePageText(page.description) || getFallbackDescription({ ...page, title }),
+            },
+          };
+        }
       }
     } catch {
       return await getBasicPageInfo(tab.id, url);

@@ -7,6 +7,15 @@ export abstract class AIProvider {
   abstract models: string[];
 
   /**
+   * 能力声明：是否支持把页面标题 / 描述翻译成中文。
+   *
+   * 生成式模型（OpenAI / Claude / DeepSeek ...）为 true；
+   * TypeSafe(jev) 这类纯判定 / 分拣模型为 false —— 它不生成文本，
+   * 此时描述直接沿用页面抓取到的原文。
+   */
+  readonly supportsTranslation: boolean = true;
+
+  /**
    * Generate tag recommendations
    */
   abstract generateTags(
@@ -124,8 +133,9 @@ export abstract class AIProvider {
       return {
         suggestedTags: tags,
         reasoning: parsed.reasoning,
-        translatedTitle: parsed.translatedTitle,
-        translatedDescription: parsed.translatedDescription
+        // 兼容 snake_case 输出，避免模型换个键名就丢掉中文标题/描述
+        translatedTitle: parsed.translatedTitle ?? parsed.translated_title,
+        translatedDescription: parsed.translatedDescription ?? parsed.translated_description
       };
     } catch (error) {
       throw new AppError(

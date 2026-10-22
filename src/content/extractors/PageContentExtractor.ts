@@ -4,18 +4,30 @@
 
 import type { PageInfo } from '@/types';
 import { safeParseUrl } from './utils';
+import { getFallbackDescription, normalizePageText } from '@/lib/utils/page-description';
 
 export class PageContentExtractor {
+  /**
+   * 不能作为正文读取的区域：导航、页眉页脚、侧栏、对话框等。
+   * 选择正文根节点与清理克隆子树共用同一份定义，保证两边原则一致。
+   */
+  private static readonly CONTENT_EXCLUDE_SELECTOR =
+    'script, style, nav, header, footer, aside, iframe, noscript, form, button, ' +
+    '[role="navigation"], [role="dialog"], [role="banner"], [role="contentinfo"]';
+
   /**
    * Extract page information
    */
   extract(): PageInfo {
     const thumbnails = this.getAllThumbnails();
+    const title = this.getTitle();
+    const content = this.getMainContent();
+    const url = window.location.href;
     return {
-      title: this.getTitle(),
-      url: window.location.href,
-      description: this.getDescription(),
-      content: this.getMainContent(),
+      title,
+      url,
+      description: this.getDescription() || getFallbackDescription({ title, url, content }),
+      content,
       thumbnail: thumbnails[0] || '',
       thumbnails: thumbnails,
       favicon: this.getFavicon(),
@@ -27,21 +39,40 @@ export class PageContentExtractor {
    */
   private getTitle(): string {
     return (
-      document.title ||
+      normalizePageText(document.title) ||
       this.getMeta('og:title') ||
-      document.querySelector('h1')?.textContent?.trim() ||
+      normalizePageText(document.querySelector('h1')?.textContent) ||
       'Untitled'
     );
   }
 
   /**
-   * Get page description
+   * 优先读取页面专属的分享描述，跳过指向其他页面的过期元数据。
    */
   private getDescription(): string {
+    const pageUrl = new URL(window.location.href);
+    const references = [
+      this.getMeta('og:url'),
+      document.querySelector('link[rel="canonical"]')?.getAttribute('href'),
+    ].filter((url): url is string => Boolean(url?.trim()));
+
+    for (const reference of references) {
+      try {
+        const referenceUrl = new URL(reference, pageUrl);
+        const samePath = referenceUrl.pathname.replace(/\/+$/, '') === pageUrl.pathname.replace(/\/+$/, '');
+        const sameQuery = !referenceUrl.search || referenceUrl.search === pageUrl.search;
+        const sameRoute = !/^#!?\//.test(pageUrl.hash) || referenceUrl.hash === pageUrl.hash;
+        if (referenceUrl.origin !== pageUrl.origin || !samePath || !sameQuery || !sameRoute) return '';
+      } catch {
+        // 无效的来源地址不能证明描述属于当前页面，改用正文兜底。
+        return '';
+      }
+    }
+
     return (
-      this.getMeta('description') ||
       this.getMeta('og:description') ||
       this.getMeta('twitter:description') ||
+      this.getMeta('description') ||
       ''
     );
   }
@@ -50,23 +81,112 @@ export class PageContentExtractor {
    * Get main content from page
    */
   private getMainContent(): string {
-    const contentElement =
-      document.querySelector('article') ||
-      document.querySelector('main') ||
-      document.querySelector('[role="main"]') ||
-      document.body;
-
+    const contentElement = this.findContentRoot();
     if (!contentElement) {
+      // 读不到可信正文时返回空串，交给标题/域名兜底，避免把隐藏全文当描述。
       return '';
     }
 
     const clone = contentElement.cloneNode(true) as HTMLElement;
+    // 仅靠选择器无法排除被 CSS 类隐藏的节点，
+    // 这里先按原始 DOM 的可见性剪掉整棵隐藏子树，只改 clone，不动真实页面。
+    this.pruneHiddenSubtrees(contentElement, clone);
     clone
-      .querySelectorAll('script, style, nav, header, footer, iframe, noscript')
+      .querySelectorAll(PageContentExtractor.CONTENT_EXCLUDE_SELECTOR)
       .forEach((el) => el.remove());
 
-    const text = clone.textContent || '';
-    return text.replace(/\s+/g, ' ').trim().substring(0, 1000);
+    // 在块级内容之间保留间隔，避免标题和正文直接粘连。
+    clone.querySelectorAll('p, div, section, h1, h2, h3, h4, h5, h6, li, br')
+      .forEach((el) => el.append(' '));
+    return normalizePageText(clone.textContent).substring(0, 1000);
+  }
+
+  /**
+   * 查找当前页面的正文根节点。
+   * 按 main → [role=main] → article 的优先顺序遍历同类全部候选，
+   * 跳过隐藏的（含隐藏祖先）以及位于导航、侧栏、对话框等排除区域内的候选；
+   * 全部不可用时才退回可见的 body，都不可用则视为无正文。
+   */
+  private findContentRoot(): HTMLElement | null {
+    const selectors = ['main', '[role="main"]', 'article'];
+
+    for (const selector of selectors) {
+      for (const candidate of Array.from(document.querySelectorAll<HTMLElement>(selector))) {
+        if (candidate.closest(PageContentExtractor.CONTENT_EXCLUDE_SELECTOR)) continue;
+        if (!this.isElementVisible(candidate, true)) continue;
+        return candidate;
+      }
+    }
+
+    const body = document.body;
+    // body 自身隐藏时整页都不可信，不能再把隐藏全文当成正文。
+    if (body && this.isElementVisible(body, true)) return body;
+    return null;
+  }
+
+  /**
+   * 判断元素是否对用户可见。
+   * 只依据属性与计算样式，不依赖布局尺寸。
+   * checkAncestors 为 true 时连同祖先链一起校验（用于挑选正文根节点）；
+   * 剪除子树时父节点已校验过，无需为每个后代重复遍历祖先链。
+   */
+  private isElementVisible(element: Element, checkAncestors: boolean): boolean {
+    if (checkAncestors) {
+      for (let node: Element | null = element; node; node = node.parentElement) {
+        if (!this.isElementVisible(node, false)) return false;
+        // body 已验证，无需再向上检查 html/document，且必须避开自身递归。
+        if (node === document.body) break;
+      }
+      return true;
+    }
+
+    if (!(element instanceof HTMLElement)) return true;
+    if (element.hidden) return false;
+    if (element.getAttribute('aria-hidden') === 'true') return false;
+    if (element.hasAttribute('inert')) return false;
+
+    const inlineStyle = element.style;
+    if (
+      inlineStyle.display === 'none' ||
+      inlineStyle.visibility === 'hidden' ||
+      inlineStyle.opacity === '0'
+    ) {
+      return false;
+    }
+
+    try {
+      const computed = window.getComputedStyle(element);
+      if (
+        computed.display === 'none' ||
+        computed.visibility === 'hidden' ||
+        computed.opacity === '0'
+      ) {
+        return false;
+      }
+    } catch {
+      // 计算样式不可用时只按上面的属性判断，避免抛错影响抽取。
+    }
+    return true;
+  }
+
+  /**
+   * 按原始 DOM 的可见性剪除 clone 中对应的隐藏子树。
+   * 两侧子元素按同下标对应，结构不一致时停止递归，避免误删内容。
+   */
+  private pruneHiddenSubtrees(original: Element, clone: Element): void {
+    const originalChildren = Array.from(original.children);
+    const cloneChildren = Array.from(clone.children);
+    if (originalChildren.length !== cloneChildren.length) return;
+
+    for (let index = 0; index < originalChildren.length; index += 1) {
+      const originalChild = originalChildren[index];
+      const cloneChild = cloneChildren[index];
+      if (!this.isElementVisible(originalChild, false)) {
+        cloneChild.remove();
+        continue;
+      }
+      this.pruneHiddenSubtrees(originalChild, cloneChild);
+    }
   }
 
   /**
@@ -276,9 +396,14 @@ export class PageContentExtractor {
    * Get meta tag content
    */
   private getMeta(name: string): string {
-    const meta =
-      document.querySelector(`meta[name="${name}"]`) ||
-      document.querySelector(`meta[property="${name}"]`);
-    return meta?.getAttribute('content') || '';
+    const metas = document.querySelectorAll('meta[name], meta[property]');
+    for (const meta of metas) {
+      const matchesName = [meta.getAttribute('name'), meta.getAttribute('property')]
+        .some((value) => value?.trim().toLowerCase() === name.toLowerCase());
+      if (!matchesName) continue;
+      const content = normalizePageText(meta.getAttribute('content'));
+      if (content) return content;
+    }
+    return '';
   }
 }

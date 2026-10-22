@@ -312,10 +312,6 @@
     "message": "Leave empty to auto-generate timestamp name",
     "description": "Group name placeholder"
   },
-  "placeholder_folder_name": {
-    "message": "Enter folder name",
-    "description": "Folder name placeholder"
-  },
   "alert_select_group": {
     "message": "Please select a group",
     "description": "Alert select group"
@@ -661,7 +657,9 @@
   "provider_modelscope": { "message": "ModelScope", "description": "ModelScope provider" },
   "provider_siliconflow": { "message": "SiliconFlow", "description": "SiliconFlow provider" },
   "provider_iflow": { "message": "iFlytek Spark", "description": "iFlytek Spark provider" },
+  "provider_typesafe": { "message": "TypeSafe (jev decision model)", "description": "TypeSafe provider" },
   "provider_custom": { "message": "Custom", "description": "Custom provider" },
+  "options_typesafe_notice": { "message": "TypeSafe (jev) only classifies — it does not generate text. It selects the best-matching tags from your existing tag library (it never creates new tags), and keeps the scraped title/description as-is (no translation). The custom prompt is ignored for this engine.", "description": "TypeSafe capability notice" },
   "search_engine_zhihu": { "message": "Zhihu", "description": "Zhihu search engine" },
   "hot_search_baidu": { "message": "Baidu Hot", "description": "Baidu hot search" },
   "hot_search_weibo": { "message": "Weibo Hot", "description": "Weibo hot search" },
@@ -691,6 +689,7 @@
   "options_api_key_placeholder_modelscope": { "message": "Enter ModelScope API Key", "description": "ModelScope API Key placeholder" },
   "options_api_key_placeholder_siliconflow": { "message": "Enter SiliconFlow API Key", "description": "SiliconFlow API Key placeholder" },
   "options_api_key_placeholder_iflow": { "message": "Enter iFlytek Spark API Key", "description": "iFlow API Key placeholder" },
+  "options_api_key_placeholder_typesafe": { "message": "Enter TypeSafe API Key", "description": "TypeSafe API Key placeholder" },
   "options_api_key_placeholder_custom": { "message": "Enter API Key", "description": "Custom API Key placeholder" },
   "options_get_api_key": { "message": "Get API Key", "description": "Get API Key" },
   "options_ai_config_title": { "message": "AI Configuration", "description": "AI config title" },
@@ -721,6 +720,7 @@
   "error_sync_cache": { "message": "Failed to sync cache", "description": "Sync cache failed" },
   "error_save_bookmark_with_time": { "message": "$error$ ($time$s)", "description": "Save bookmark error with time", "placeholders": { "error": { "content": "$1" }, "time": { "content": "$2" } } },
   "msg_ai_recommend_complete": { "message": "🎯 AI recommendation complete ($time$s)", "description": "AI recommend complete", "placeholders": { "time": { "content": "$1" } } },
+  "msg_ai_recommend_empty": { "message": "AI finished matching, but no tag in your library matches this page. Sync your tag library in settings, or add a tag manually.", "description": "AI recommend returned no tags" },
   "msg_cache_synced": { "message": "Cache synced successfully!", "description": "Cache synced successfully" },
   "default_folder_name": { "message": "Folder", "description": "Default folder name" },
   "default_untitled": { "message": "Untitled", "description": "Default untitled name" },

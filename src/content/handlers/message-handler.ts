@@ -4,6 +4,7 @@
 
 import type { Message, MessageResponse } from '@/types';
 import { PageContentExtractor } from '../extractors';
+import { getFallbackDescription } from '@/lib/utils/page-description';
 
 const extractor = new PageContentExtractor();
 
@@ -86,7 +87,7 @@ async function handleExtractPageInfo(
       data: {
         title: document.title || 'Untitled',
         url: window.location.href,
-        description: '',
+        description: getFallbackDescription({ title: document.title, url: window.location.href }),
         content: '',
         thumbnail: '',
       },

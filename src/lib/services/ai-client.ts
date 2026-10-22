@@ -1,8 +1,23 @@
 import type { AIProvider as ProviderName } from '@/types';
 import { AI_SERVICE_URLS } from '@/lib/constants/urls';
 
+/**
+ * 系统提示词。
+ *
+ * 注意：这里必须显式声明输出语言，否则模型容易沿用网页原文语言，
+ * 导致 translatedTitle / translatedDescription 仍然是英文。
+ */
 const SYSTEM_PROMPT =
-  'You are an intelligent bookmark tag recommendation assistant. Prefer using existing tags, only suggest new tags when necessary. Response format must be JSON.';
+  'You are an intelligent bookmark tag recommendation assistant. ' +
+  'Prefer using existing tags, only suggest new tags when necessary. ' +
+  'Response format must be JSON. ' +
+  'LANGUAGE RULE (highest priority): all human-readable output — especially ' +
+  '"translatedTitle" and "translatedDescription" — MUST be written in ' +
+  'Simplified Chinese (简体中文), even when the source page is in English or ' +
+  'any other language. Never return an English description. If the source text ' +
+  'is already Chinese, return it unchanged. ' +
+  '来源规则：标题和描述只能依据当前 URL 对应的网页信息。最近书签、标签库和示例仅用于标签选择，' +
+  '不能作为当前网页描述的事实来源。缺少描述时概括当前正文；正文也缺失时只翻译当前标题，不推测网站功能。';
 
 interface InvokeParams {
   provider: ProviderName;
@@ -291,6 +306,23 @@ const providerConfigs: Record<ProviderName, ProviderConfig> = {
         defaultMaxTokens: 1000
       }),
     extractContent: openAIStyleExtractor
+  },
+  typesafe: {
+    defaultBaseUrl: AI_SERVICE_URLS.TYPESAFE,
+    /**
+     * TypeSafe 是结构化评估接口（POST /v1/systemone），请求体由
+     * state + questions 组成，不接受自由文本 prompt。
+     *
+     * 标签推荐走 providers/typesafe.ts 的专用实现；此分支仅作为
+     * “提示词式调用误用 TypeSafe”时的兜底，给出可读的错误提示。
+     */
+    buildRequest: () => {
+      throw new Error(
+        'TypeSafe 为结构化评估接口（POST /v1/systemone），不支持自由文本生成调用。' +
+          '批量导入整理等需要生成文本的场景请改用其它 AI 引擎。'
+      );
+    },
+    extractContent: () => undefined
   },
   custom: {
     defaultBaseUrl: AI_SERVICE_URLS.OPENAI,

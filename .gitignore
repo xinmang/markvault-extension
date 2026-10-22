@@ -4,3 +4,12 @@ release
 .DS_Store
 *.log
 .vscode
+
+# 本地配置、凭证和工具会话
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.workbuddy-ai/
+coverage/

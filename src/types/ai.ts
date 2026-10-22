@@ -2,7 +2,7 @@ import type { PageInfo } from './common';
 
 // ============ AI Provider Types ============
 
-export type AIProvider = 'openai' | 'claude' | 'deepseek' | 'zhipu' | 'modelscope' | 'siliconflow' | 'iflow' | 'custom';
+export type AIProvider = 'openai' | 'claude' | 'deepseek' | 'zhipu' | 'modelscope' | 'siliconflow' | 'iflow' | 'typesafe' | 'custom';
 
 export interface AIConnectionInfo {
   id?: string;
@@ -24,6 +24,7 @@ export interface AIConfig {
     modelscope?: string;
     siliconflow?: string;
     iflow?: string;
+    typesafe?: string;
     custom?: string;
   };
   apiUrls?: {
@@ -34,6 +35,7 @@ export interface AIConfig {
     modelscope?: string;
     siliconflow?: string;
     iflow?: string;
+    typesafe?: string;
     custom?: string;
   };
   model?: string;
@@ -78,4 +80,12 @@ export interface RecommendationResult {
   source: 'ai' | 'fallback';
   timestamp: number;
   message?: string | null;
+  /**
+   * AI 返回的中文标题。原始标题非中文时用于替换页面标题。
+   */
+  translatedTitle?: string;
+  /**
+   * AI 返回的中文描述。原始描述非中文时用于替换页面描述。
+   */
+  translatedDescription?: string;
 }

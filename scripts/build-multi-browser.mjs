@@ -1,361 +1,119 @@
 #!/usr/bin/env node
 
-/**
- * 多浏览器版本构建脚本
- * 
- * 功能：
- * - 根据配置文件自动构建多个浏览器版本
- * - 支持选择性构建特定浏览器
- * - 自动验证配置
- * - 生成构建报告
- * 
- * 使用方式：
- * - 构建所有版本: pnpm build
- * - 构建特定版本: pnpm build chrome
- * - 构建多个版本: pnpm build chrome firefox
- */
+/** 构建 Chromium 扩展，并生成可上传到 GitHub Release 的 ZIP 与校验和。 */
+import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { createReadStream, createWriteStream, existsSync, readFileSync } from 'node:fs'
+import { mkdir, rm, rename, writeFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { ZipArchive } from 'archiver'
+import { buildConfig, getEnabledBrowsers, validateConfig } from '../build.config.mjs'
 
-import { execSync } from 'child_process'
-import { createWriteStream, existsSync, mkdirSync, copyFileSync, readFileSync, readdirSync } from 'fs'
-import { readdir, stat, rm } from 'fs/promises'
-import { join, resolve, dirname } from 'path'
-import { fileURLToPath } from 'url'
-import archiver from 'archiver'
-import { buildConfig, getEnabledBrowsers, getBrowserConfig, validateConfig } from '../build.config.mjs'
+const projectRoot = fileURLToPath(new URL('../', import.meta.url))
+const require = createRequire(import.meta.url)
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = dirname(__filename)
-
-// 项目路径
-const TAB_ROOT = resolve(__dirname, '..')
-const DIST_DIR = join(TAB_ROOT, buildConfig.output.distDir)
-const OUTPUT_DIR = resolve(TAB_ROOT, buildConfig.output.publicDir)
-
-// 颜色输出
-const colors = {
-    reset: '\x1b[0m',
-    bright: '\x1b[1m',
-    dim: '\x1b[2m',
-    green: '\x1b[32m',
-    yellow: '\x1b[33m',
-    blue: '\x1b[34m',
-    red: '\x1b[31m',
-    cyan: '\x1b[36m',
-    magenta: '\x1b[35m',
+function projectDirectory(value) {
+  const absolute = resolve(projectRoot, value)
+  const child = relative(projectRoot, absolute)
+  if (!child || child.startsWith('..') || isAbsolute(child)) {
+    throw new Error(`构建目录必须位于项目内部：${value}`)
+  }
+  return absolute
 }
 
-function log(message, color = colors.reset) {
-    console.log(`${color}${message}${colors.reset}`)
+const distDirectory = projectDirectory(buildConfig.output.distDir)
+const releaseDirectory = projectDirectory(buildConfig.output.publicDir)
+
+function runNode(script, args = []) {
+  const result = spawnSync(process.execPath, [script, ...args], {
+    cwd: projectRoot,
+    stdio: 'inherit',
+  })
+  if (result.error) throw result.error
+  if (result.status !== 0) throw new Error(`构建命令失败：${script}`)
 }
 
-function logStep(step, total, message) {
-    log(`\n[${step}/${total}] ${message}`, colors.blue + colors.bright)
-}
-
-function logSuccess(message) {
-    log(`✓ ${message}`, colors.green)
-}
-
-function logError(message) {
-    log(`✗ ${message}`, colors.red)
-}
-
-function logWarning(message) {
-    log(`⚠ ${message}`, colors.yellow)
-}
-
-function logInfo(message) {
-    log(`ℹ ${message}`, colors.cyan)
-}
-
-/**
- * 执行命令
- */
-function runCommand(command, cwd = TAB_ROOT) {
-    try {
-        log(`  执行: ${command}`, colors.dim)
-        execSync(command, { cwd, stdio: 'inherit' })
-        return true
-    } catch (error) {
-        logError(`命令执行失败: ${command}`)
-        return false
-    }
-}
-
-/**
- * 获取目录大小
- */
-async function getDirectorySize(dirPath) {
-    let totalSize = 0
-
-    async function calculateSize(currentPath) {
-        const stats = await stat(currentPath)
-
-        if (stats.isFile()) {
-            totalSize += stats.size
-        } else if (stats.isDirectory()) {
-            const files = await readdir(currentPath)
-            await Promise.all(
-                files.map(file => calculateSize(join(currentPath, file)))
-            )
-        }
-    }
-
-    await calculateSize(dirPath)
-    return totalSize
-}
-
-/**
- * 格式化文件大小
- */
-function formatSize(bytes) {
-    if (bytes < 1024) return `${bytes} B`
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`
-    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
-}
-
-/**
- * 创建 ZIP 压缩包
- */
-async function createZip(sourceDir, outputPath, browser) {
-    return new Promise((resolve, reject) => {
-        const output = createWriteStream(outputPath)
-        const archive = archiver('zip', {
-            zlib: { level: buildConfig.buildOptions.compressionLevel }
-        })
-
-        output.on('close', () => {
-            resolve(archive.pointer())
-        })
-
-        archive.on('error', (err) => {
-            reject(err)
-        })
-
-        archive.pipe(output)
-
-        // 直接添加整个 dist 目录
-        archive.directory(sourceDir, false)
-
-        archive.finalize()
+async function createZip(outputFile) {
+  const temporary = `${outputFile}.tmp`
+  try {
+    await new Promise((resolveArchive, reject) => {
+      const stream = createWriteStream(temporary)
+      const archive = new ZipArchive({ zlib: { level: buildConfig.buildOptions.compressionLevel } })
+      stream.on('close', resolveArchive)
+      stream.on('error', reject)
+      archive.on('error', reject)
+      archive.on('warning', reject)
+      archive.pipe(stream)
+      archive.directory(distDirectory, false)
+      archive.file(join(projectRoot, 'LICENSE'), { name: 'LICENSE' })
+      archive.finalize().catch(reject)
     })
+    // 完整写入后替换安装包，构建失败时保留上次成功的产物。
+    await rename(temporary, outputFile)
+  } finally {
+    await rm(temporary, { force: true })
+  }
 }
 
-/**
- * 构建单个浏览器版本
- */
-async function buildBrowser(browser, distSize) {
-    const outputPath = join(OUTPUT_DIR, browser.outputFile)
-
-    // 删除旧的 ZIP 文件
-    if (existsSync(outputPath)) {
-        await rm(outputPath, { force: true })
-    }
-
-    // 创建 ZIP
-    log(`  正在压缩 ${browser.name} 版本...`, colors.dim)
-    const zipSize = await createZip(DIST_DIR, outputPath, browser)
-
-    // 验证结果
-    if (!existsSync(outputPath)) {
-        logError(`${browser.name} ZIP 文件创建失败`)
-        return null
-    }
-
-    const compressionRatio = ((1 - zipSize / distSize) * 100).toFixed(2)
-
-    return {
-        browser: browser.name,
-        id: browser.id,
-        outputFile: browser.outputFile,
-        outputPath,
-        size: zipSize,
-        compressionRatio,
-        success: true
-    }
+async function sha256(file) {
+  const hash = createHash('sha256')
+  for await (const chunk of createReadStream(file)) hash.update(chunk)
+  return hash.digest('hex')
 }
 
-/**
- * 主流程
- */
 async function main() {
-    const startTime = Date.now()
+  const validation = validateConfig()
+  if (!validation.valid) throw new Error(validation.errors.join('\n'))
 
-    // 解析命令行参数
-    const args = process.argv.slice(2)
-    const targetBrowsers = args.length > 0 ? args : null
+  const packageInfo = JSON.parse(readFileSync(join(projectRoot, 'package.json'), 'utf8'))
+  const manifest = JSON.parse(readFileSync(join(projectRoot, 'manifest.json'), 'utf8'))
+  if (packageInfo.version !== manifest.version) {
+    throw new Error('package.json 与 manifest.json 的版本必须一致')
+  }
+  if (process.env.GITHUB_REF_TYPE === 'tag' && process.env.GITHUB_REF_NAME !== `v${packageInfo.version}`) {
+    throw new Error(`发布标签必须为 v${packageInfo.version}`)
+  }
 
-    log('\n' + '='.repeat(70), colors.bright)
-    log('  多浏览器扩展构建工具', colors.bright + colors.cyan)
-    log('='.repeat(70) + '\n', colors.bright)
+  const requested = process.argv.slice(2)
+  const available = getEnabledBrowsers()
+  const unknown = requested.filter((id) => !available.some((browser) => browser.id === id))
+  if (unknown.length) throw new Error(`未启用的浏览器：${unknown.join(', ')}`)
+  const browsers = requested.length ? available.filter((browser) => requested.includes(browser.id)) : available
+  if (!browsers.length) throw new Error('没有启用的浏览器构建目标')
 
-    try {
-        // 验证配置
-        const validation = validateConfig()
-        if (!validation.valid) {
-            logError('配置验证失败:')
-            validation.errors.forEach(error => log(`  - ${error}`, colors.red))
-            process.exit(1)
-        }
+  // 类型检查先于清理，避免类型错误导致本地安装目录被删除。
+  console.log(`正在构建 MarkVault Extension ${packageInfo.version}`)
+  runNode(require.resolve('typescript/bin/tsc'), ['--noEmit'])
+  if (buildConfig.buildOptions.clean) {
+    if (distDirectory !== resolve(projectRoot, 'dist')) throw new Error('只允许清理项目的 dist 目录')
+    await rm(distDirectory, { recursive: true, force: true })
+  }
+  runNode(join(dirname(require.resolve('vite/package.json')), 'bin/vite.js'), ['build'])
 
-        // 获取要构建的浏览器
-        let browsers = getEnabledBrowsers()
+  const builtManifestPath = join(distDirectory, 'manifest.json')
+  if (!existsSync(builtManifestPath)) throw new Error('缺少构建后的 manifest.json')
+  const builtManifest = JSON.parse(readFileSync(builtManifestPath, 'utf8'))
+  if (builtManifest.version !== packageInfo.version) throw new Error('构建后的扩展版本不一致')
 
-        if (targetBrowsers) {
-            browsers = browsers.filter(b => targetBrowsers.includes(b.id))
-            if (browsers.length === 0) {
-                logError(`未找到指定的浏览器: ${targetBrowsers.join(', ')}`)
-                logInfo(`可用的浏览器: ${getEnabledBrowsers().map(b => b.id).join(', ')}`)
-                process.exit(1)
-            }
-            logInfo(`构建目标: ${browsers.map(b => b.name).join(', ')}`)
-        } else {
-            logInfo(`构建所有启用的浏览器 (${browsers.length} 个)`)
-        }
-
-        const totalSteps = 4 + browsers.length
-        let currentStep = 0
-
-        // 步骤 1: 检查环境
-        currentStep++
-        logStep(currentStep, totalSteps, '检查环境')
-
-        if (!existsSync(TAB_ROOT)) {
-            logError('项目根目录不存在')
-            process.exit(1)
-        }
-        logSuccess('项目根目录存在')
-
-        // 创建输出目录
-        if (!existsSync(OUTPUT_DIR)) {
-            mkdirSync(OUTPUT_DIR, { recursive: true })
-            logSuccess('已创建输出目录')
-        } else {
-            logSuccess('输出目录存在')
-        }
-
-        // 注意：所有浏览器版本都使用 dist/manifest.json（已被 Vite 正确转换）
-        // 不再检查 manifests/ 目录下的文件
-
-        // 步骤 2: 清理旧文件
-        currentStep++
-        logStep(currentStep, totalSteps, '清理旧文件')
-
-        if (buildConfig.buildOptions.clean) {
-            if (existsSync(DIST_DIR)) {
-                log('  删除旧的 dist 目录...', colors.dim)
-                await rm(DIST_DIR, { recursive: true, force: true })
-                logSuccess('已清理构建目录')
-            }
-
-            // 清理旧的 ZIP 文件
-            let cleanedCount = 0
-            for (const browser of browsers) {
-                const outputPath = join(OUTPUT_DIR, browser.outputFile)
-                if (existsSync(outputPath)) {
-                    await rm(outputPath, { force: true })
-                    cleanedCount++
-                }
-            }
-            if (cleanedCount > 0) {
-                logSuccess(`已清理 ${cleanedCount} 个旧的 ZIP 文件`)
-            }
-        } else {
-            logInfo('跳过清理（配置禁用）')
-        }
-
-        // 步骤 3: 构建扩展
-        currentStep++
-        logStep(currentStep, totalSteps, '构建浏览器扩展')
-
-        if (!runCommand('npm run build:only')) {
-            logError('构建失败')
-            process.exit(1)
-        }
-        logSuccess('构建完成')
-
-        // 验证构建产物
-        if (!existsSync(DIST_DIR)) {
-            logError('构建产物目录不存在')
-            process.exit(1)
-        }
-
-        // 获取构建产物大小
-        const distSize = await getDirectorySize(DIST_DIR)
-        log(`  构建产物大小: ${formatSize(distSize)}`, colors.dim)
-
-        // 步骤 4: 创建浏览器版本
-        currentStep++
-        logStep(currentStep, totalSteps, '创建浏览器版本')
-
-        const results = []
-
-        for (const browser of browsers) {
-            log(`\n  📦 ${browser.name}`, colors.cyan + colors.bright)
-            log(`     ${browser.description}`, colors.dim)
-
-            const result = await buildBrowser(browser, distSize)
-
-            if (result) {
-                results.push(result)
-                logSuccess(`${browser.name} 构建成功`)
-                log(`     文件: ${result.outputFile}`, colors.dim)
-                log(`     大小: ${formatSize(result.size)}`, colors.dim)
-                log(`     压缩率: ${result.compressionRatio}%`, colors.dim)
-            } else {
-                logError(`${browser.name} 构建失败`)
-            }
-        }
-
-        // 步骤 5: 生成报告
-        currentStep++
-        logStep(currentStep, totalSteps, '生成构建报告')
-
-        const endTime = Date.now()
-        const duration = ((endTime - startTime) / 1000).toFixed(2)
-
-        // 完成
-        log('\n' + '='.repeat(70), colors.green + colors.bright)
-        log('  ✓ 构建完成！', colors.green + colors.bright)
-        log('='.repeat(70) + '\n', colors.green + colors.bright)
-
-        // 构建报告
-        log('📊 构建报告:', colors.bright)
-        log('')
-        log(`  构建时间: ${duration}s`, colors.cyan)
-        log(`  成功: ${results.length}/${browsers.length}`, colors.green)
-        log(`  输出目录: ${OUTPUT_DIR}`, colors.dim)
-        log('')
-
-        if (results.length > 0) {
-            log('📦 生成的文件:', colors.bright)
-            results.forEach(result => {
-                log(`  ✓ ${result.outputFile}`, colors.green)
-                log(`    大小: ${formatSize(result.size)} | 压缩率: ${result.compressionRatio}%`, colors.dim)
-            })
-            log('')
-        }
-
-        // 下载地址
-        log('🌐 下载地址:', colors.bright)
-        results.forEach(result => {
-            log(`  ${result.browser}: /extensions/${result.outputFile}`, colors.cyan)
-        })
-        log('')
-
-        // 下一步提示
-        log('📝 下一步:', colors.bright)
-        log('  1. 测试扩展: 在各个浏览器中加载测试', colors.dim)
-        log('  2. 将 release/markvault-extension-chrome.zip 发布到 MarkVault 主项目', colors.dim)
-        log('  3. 用户下载: 访问扩展页面下载对应版本', colors.dim)
-        log('')
-
-    } catch (error) {
-        logError(`发生错误: ${error.message}`)
-        console.error(error)
-        process.exit(1)
+  await mkdir(releaseDirectory, { recursive: true })
+  const checksums = []
+  for (const browser of browsers) {
+    if (browser.outputFile !== `${packageInfo.name}-${browser.id}.zip`) {
+      throw new Error(`安装包文件名不符合发布约定：${browser.outputFile}`)
     }
+    const outputFile = join(releaseDirectory, browser.outputFile)
+    await createZip(outputFile)
+    checksums.push(`${await sha256(outputFile)}  ${browser.outputFile}`)
+    console.log(`已生成 ${relative(projectRoot, outputFile)}`)
+  }
+  await writeFile(join(releaseDirectory, 'checksums.sha256'), `${checksums.join('\n')}\n`)
+  console.log('校验和已保存到 release/checksums.sha256')
+  console.log('发布后下载：https://github.com/xinmang/markvault-extension/releases/latest/download/markvault-extension-chrome.zip')
 }
 
-// 运行主流程
-main()
+main().catch((error) => {
+  console.error(error.message)
+  process.exitCode = 1
+})

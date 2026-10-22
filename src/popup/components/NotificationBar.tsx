@@ -25,8 +25,10 @@ export function NotificationBar({
   onDismissSuccess,
   onRetry,
 }: NotificationBarProps) {
+  if (!error && !loadingMessage && !successMessage) return null;
+
   return (
-    <div className="pointer-events-none fixed top-0 left-0 right-0 z-50 space-y-2 px-4 pt-2">
+    <div className="max-h-[30%] shrink-0 space-y-2 overflow-y-auto px-4 py-2" aria-live="polite" aria-relevant="additions text">
       {error && (
         <div className="pointer-events-auto">
           <ErrorMessage

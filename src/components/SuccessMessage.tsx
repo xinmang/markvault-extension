@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { DURATIONS } from '@/lib/constants/durations';
+import { t } from '@/lib/i18n';
 
 interface SuccessMessageProps {
   message: string;
@@ -18,7 +19,7 @@ export function SuccessMessage({ message, onDismiss, autoHideDuration = DURATION
         clearTimeout(timer);
       };
     }
-  }, [onDismiss, autoHideDuration]);
+  }, [message, onDismiss, autoHideDuration]);
 
   return (
     <div className="bg-[color:var(--tab-message-success-bg)] border border-[color:var(--tab-message-success-border)] rounded-lg p-3 shadow-lg animate-in slide-in-from-top-5 fade-in duration-300 text-[var(--tab-message-success-icon)]">
@@ -46,6 +47,7 @@ export function SuccessMessage({ message, onDismiss, autoHideDuration = DURATION
         {onDismiss && (
           <button
             onClick={onDismiss}
+            aria-label={t('options_close')}
             className="flex-shrink-0 opacity-80 hover:opacity-100 transition-opacity"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

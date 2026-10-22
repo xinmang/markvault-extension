@@ -39,7 +39,8 @@ export function AIConfigSection({
     formData.aiProvider === 'custom' ||
     formData.aiProvider === 'siliconflow' ||
     formData.aiProvider === 'deepseek' ||
-    formData.aiProvider === 'openai';
+    formData.aiProvider === 'openai' ||
+    formData.aiProvider === 'typesafe';
 
   const getApiUrlPlaceholder = () => {
     switch (formData.aiProvider) {
@@ -49,6 +50,8 @@ export function AIConfigSection({
         return AI_SERVICE_URLS.DEEPSEEK;
       case 'siliconflow':
         return AI_SERVICE_URLS.SILICONFLOW;
+      case 'typesafe':
+        return AI_SERVICE_URLS.TYPESAFE;
       default:
         return t('options_custom_api_placeholder');
     }
@@ -97,6 +100,7 @@ export function AIConfigSection({
               <option value="modelscope">{t('provider_modelscope')}</option>
               <option value="siliconflow">{t('provider_siliconflow')}</option>
               <option value="iflow">{t('provider_iflow')}</option>
+              <option value="typesafe">{t('provider_typesafe')}</option>
               <option value="custom">{t('provider_custom')}</option>
             </select>
           </div>
@@ -136,6 +140,13 @@ export function AIConfigSection({
             onModelChange={(aiModel) => setFormData({ ...formData, aiModel })}
             onRefreshModels={onRefreshModels}
           />
+
+          {/* TypeSafe 能力提示：jev 只做判定，不生成/翻译文本 */}
+          {formData.aiProvider === 'typesafe' && (
+            <div className="rounded-xl border border-[color:var(--tab-options-card-border)] bg-[color:var(--tab-options-card-bg)] p-4">
+              <p className="text-sm text-[var(--tab-options-text)]">{t('options_typesafe_notice')}</p>
+            </div>
+          )}
 
           {/* 测试连接按钮 */}
           <div>

@@ -39,6 +39,7 @@ export const getProviderName = (provider: AIProvider): string => {
     modelscope: t('provider_modelscope'),
     siliconflow: t('provider_siliconflow'),
     iflow: t('provider_iflow'),
+    typesafe: t('provider_typesafe'),
     custom: t('provider_custom'),
   };
   return nameMap[provider];
@@ -53,5 +54,6 @@ export const providerNameMap: Record<AIProvider, string> = {
   modelscope: 'ModelScope',
   siliconflow: 'SiliconFlow',
   iflow: 'iFlytek Spark',
+  typesafe: 'TypeSafe',
   custom: 'Custom',
 };

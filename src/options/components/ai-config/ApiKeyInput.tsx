@@ -21,6 +21,7 @@ const getApiKeyPlaceholder = (provider: AIProvider): string => {
     modelscope: t('options_api_key_placeholder_modelscope'),
     siliconflow: t('options_api_key_placeholder_siliconflow'),
     iflow: t('options_api_key_placeholder_iflow'),
+    typesafe: t('options_api_key_placeholder_typesafe'),
     custom: t('options_api_key_placeholder_custom'),
   };
   return placeholders[provider];
@@ -34,6 +35,7 @@ const providerDocs: Partial<Record<AIProvider, { name: string; url: string }>> =
   modelscope: { name: 'ModelScope', url: AI_SERVICE_DOCS.MODELSCOPE },
   siliconflow: { name: 'SiliconFlow', url: AI_SERVICE_DOCS.SILICONFLOW },
   iflow: { name: 'iFlytek Platform', url: AI_SERVICE_DOCS.IFLOW },
+  typesafe: { name: 'TypeSafe API Reference', url: AI_SERVICE_DOCS.TYPESAFE },
 };
 
 export function ApiKeyInput({ provider, apiKey, onChange }: ApiKeyInputProps) {
