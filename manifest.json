@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "__MSG_extName__",
-  "version": "1.0.4",
+  "version": "1.0.1000",
   "description": "__MSG_extDescription__",
   "default_locale": "zh_CN",
   "icons": {
@@ -30,7 +30,8 @@
     "scripting",
     "notifications",
     "bookmarks",
-    "alarms"
+    "alarms",
+    "offscreen"
   ],
   "host_permissions": [
     "https://api.openai.com/*",

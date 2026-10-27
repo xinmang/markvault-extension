@@ -2,44 +2,12 @@
  * Options 表单类型定义
  */
 
-import type { AIProvider, AIConnectionInfo } from '@/types'
-
-export interface OptionsFormData {
-  theme: 'light' | 'dark' | 'auto'
-  themeStyle: 'default' | 'bw' | 'tmarks'
-  aiProvider: AIProvider
-  apiKey: string
-  apiUrl: string
-  aiModel: string
-  bookmarkApiUrl: string
-  bookmarkApiKey: string
-  enableCustomPrompt: boolean
-  customPrompt: string
-  maxSuggestedTags: number
-  enableAI: boolean
-  defaultIncludeThumbnail: boolean
-  defaultCreateSnapshot: boolean
-  defaultIsPublic: boolean
-  tagTheme: 'classic' | 'mono' | 'bw'
-  newtabFolderRecommendCount: number
-  enableNewtabAI: boolean
-  enableNewtabFolderPrompt: boolean
-  newtabFolderPrompt: string
-  maxImportGroups?: number
-}
+export type { OptionsFormData, FormDataSetter } from '@/types/form'
 
 export interface FormStats {
   tags: number
   bookmarks: number
   lastSync: number
-}
-
-export interface SavedConnectionsState {
-  savedConnections: Partial<Record<AIProvider, AIConnectionInfo[]>>
-  isPresetModalOpen: boolean
-  presetLabel: string
-  isSavingPreset: boolean
-  presetError: string | null
 }
 
 export interface ModelFetchState {
@@ -48,3 +16,12 @@ export interface ModelFetchState {
   modelFetchError: string | null
   modelFetchNonce: number
 }
+
+/** 连接测试的结果，显示在对应的设置区块内 */
+export interface ConnectionTestResult {
+  ok: boolean
+  message: string
+  testedAt: number
+}
+
+export type ConnectionTestTarget = 'markvault' | 'tags' | 'description'

@@ -8,8 +8,10 @@ import { useFocusTrap } from '@/lib/hooks/useFocusTrap';
 import { useScrollLock } from '@/lib/hooks/useScrollLock';
 import type { ExistingBookmarkData } from '@/lib/services/bookmark-api';
 
+export type BookmarkExistsAction = 'snapshot' | 'screenshot' | 'update-tags' | 'update-description';
+
 export function useBookmarkExistsState(bookmark: ExistingBookmarkData) {
-  const [selectedAction, setSelectedAction] = useState<'snapshot' | 'update-tags' | 'update-description' | null>(null);
+  const [selectedAction, setSelectedAction] = useState<BookmarkExistsAction | null>(null);
   const [tmarksUrl, setTmarksUrl] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingMessage, setProcessingMessage] = useState('');

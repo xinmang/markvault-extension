@@ -42,7 +42,11 @@ export type MessageType =
   | 'CAPTURE_PAGE'
   | 'CAPTURE_PAGE_V2'
   | 'PING'
-  | 'REFRESH_PINNED_BOOKMARKS';
+  | 'REFRESH_PINNED_BOOKMARKS'
+  | 'GENERATE_DESCRIPTION'
+  | 'EXTRACT_SCREENSHOT_CONTENT'
+  | 'GENERATE_SCREENSHOT'
+  | 'UPLOAD_SCREENSHOT';
 
 export interface CapturePageOptions {
   includeThumbnail?: boolean;

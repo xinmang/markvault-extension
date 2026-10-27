@@ -14,9 +14,10 @@
 | 功能 | 说明 |
 | --- | --- |
 | 网页收藏 | 保存当前网页，编辑标题、描述与标签，同步到 MarkVault |
-| AI 辅助 | 使用配置的 AI 服务推荐标签、整理收藏与文件夹 |
+| AI 辅助 | 分类模型推荐标签，描述模型改写网页描述（例如 GitHub 仓库），两者可分别指定；也用于整理收藏与文件夹 |
 | 标签页组 | 收纳当前窗口中的网页，在需要时重新打开 |
 | 网页快照 | 捕获网页内容并上传到连接的 MarkVault 实例 |
+| 网站截图 | 把 X、linux.do 等帖子的正文和图片生成一张干净的图文卡片，保存书签时上传，也可在弹窗中预览、复制或下载 |
 | 新标签页 | 快捷入口、文件夹、组件与外观设置 |
 | 浏览器书签 | 导入、整理书签，并通过配置的目录与服务同步 |
 
@@ -36,7 +37,8 @@ Release 同时提供 `checksums.sha256`。Linux 可在下载目录运行 `sha256
 1. 部署并登录 [MarkVault](https://github.com/xinmang/MarkVault)，在“设置 → API”中创建权限合适的 API Key。
 2. 在扩展设置中填写实例的完整网站地址，例如 `https://bookmarks.example.com`；本机部署可填 `http://localhost:8787`。不要把 API Key 填入地址栏。
 3. 填入 MarkVault API Key 并保存配置，验证连接后再保存网页。
-4. 需要 AI 时，另行设置 AI 服务、模型、接口地址和对应密钥；MarkVault API Key 与 AI 服务密钥用途不同。
+4. 需要 AI 时，在“AI 服务与模型”中设置一个 AI 服务（服务商、接口地址和密钥），再分别指定标签分类模型和描述生成模型；使用 jev 这类只做分类的模型时，可为描述生成单独配置一个能撰写文字的服务。MarkVault API Key 与 AI 服务密钥用途不同。
+5. 网站截图默认对 `x.com`、`twitter.com`、`linux.do` 开启，可在“网站截图”中增删网站。替换已有截图需要 API Key 具备 `bookmarks.update` 权限。
 
 如果实例拒绝扩展的跨域请求，在扩展管理页复制扩展 ID，把完整来源加入主项目 `.env`，再执行 `docker compose up -d`：
 
@@ -58,11 +60,12 @@ CORS_ALLOWED_ORIGINS=chrome-extension://你的扩展ID
 | `bookmarks` | 读取、导入和整理浏览器书签目录 |
 | `notifications` | 显示保存结果等操作通知 |
 | `alarms` | 在后台定时执行同步和刷新 |
+| `offscreen` | 在离屏文档中把帖子正文渲染成网站截图图片 |
 | HTTP/HTTPS 站点访问 | 连接用户配置的自托管实例、AI 接口，并提取网页内容 |
 
 扩展会替换浏览器的新标签页，内容脚本匹配普通网页。内置页面、扩展商店等浏览器受限页面可能无法提取或保存快照。
 
-连接密钥当前保存在浏览器的 **`chrome.storage.local`，没有额外加密**。请保护浏览器配置目录，不要共享含密钥的配置、备份或截图。开启 AI 功能后，参与推荐的网页信息会发送到你配置的 AI 服务；保存书签、同步和上传快照时，相关数据会发送到 MarkVault 实例。保存前请核对公开/私有状态，当前默认偏好会将新书签设为公开。
+连接密钥当前保存在浏览器的 **`chrome.storage.local`，没有额外加密**。请保护浏览器配置目录，不要共享含密钥的配置、备份或截图。开启 AI 功能后，参与推荐的网页信息会发送到你配置的 AI 服务；保存书签、同步和上传快照或网站截图时，相关数据会发送到 MarkVault 实例；生成网站截图时，扩展会直接从原网站下载正文中的图片和头像。保存前请核对公开/私有状态，当前默认偏好会将新书签设为公开。
 
 ## 本地开发
 
@@ -91,7 +94,8 @@ pnpm build
 ```text
 manifest.json          扩展入口、权限与版本
 src/background/        后台 Service Worker 和任务处理
-src/content/           网页内容脚本
+src/content/           网页内容脚本（含网站截图的正文提取）
+src/offscreen/         网站截图渲染（离屏文档）
 src/popup/             工具栏弹出窗口
 src/options/           设置与导入页面
 src/newtab/            新标签页
@@ -108,12 +112,14 @@ release/               ZIP 和校验和（构建生成）
 
 1. 同步修改 `package.json` 和 `manifest.json` 的版本，运行 `pnpm install --lockfile-only` 更新锁文件，并执行类型检查、构建和依赖审计。
 2. 用构建后的 `dist/` 验证安装、保存书签、AI 配置、标签页组、快照和同步，提交源码及锁文件。
-3. 推送与版本一致的标签，例如两个文件都为 `1.0.4` 时：
+3. 推送与版本一致的标签，例如两个文件都为 `1.0.1000` 时：
 
    ```bash
-   git tag v1.0.4
-   git push origin v1.0.4
+   git tag v1.0.1000
+   git push origin v1.0.1000
    ```
+
+   版本号格式为 `x.y.NNNN`：末位是不少于 4 位、不以 0 开头、只增不减的构建号。
 
 4. 确认工作流成功，并检查 Release 中存在 `markvault-extension-chrome.zip` 和 `checksums.sha256`。仓库与 Release 需要允许目标用户访问。
 

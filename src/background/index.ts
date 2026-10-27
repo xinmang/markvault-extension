@@ -14,6 +14,9 @@ import { TIMEOUTS } from '@/lib/constants/timeouts';
 import type { Message, MessageResponse, PageInfo } from '@/types';
 import type { BookmarkInput } from '@/types/bookmark';
 import { logger } from '@/lib/utils/logger';
+import { isDescriptionAIActive } from '@/lib/services/ai-connection';
+import { generateDescription } from '@/lib/services/description-generator';
+import { captureScreenshot, getActiveTabId } from './services/screenshot';
 
 import {
   ensureNewtabWorkspaceFolders,
@@ -281,6 +284,41 @@ async function handleMessage(
       const pageInfo = message.payload as PageInfo;
       const result = await tagRecommender.recommendTags(pageInfo);
       return { success: true, data: result };
+    }
+
+    case 'GENERATE_DESCRIPTION': {
+      // 未开启 AI 描述或没有可生成文字的模型时返回 null，弹窗保留原描述
+      const config = await StorageService.loadConfig();
+      if (!isDescriptionAIActive(config)) {
+        return { success: true, data: null };
+      }
+      const result = await generateDescription(message.payload as PageInfo, config);
+      return { success: true, data: result };
+    }
+
+    case 'GENERATE_SCREENSHOT': {
+      // 弹窗中的“预览截图”：只渲染不上传，结果用于复制或下载
+      const payload = (message.payload || {}) as { theme?: 'light' | 'dark' };
+      const tabId = await getActiveTabId();
+      const { result } = await captureScreenshot(tabId, { theme: payload.theme ?? 'light' });
+      return { success: true, data: result };
+    }
+
+    case 'UPLOAD_SCREENSHOT': {
+      // 已存在的书签：生成截图并替换 MarkVault 中的旧截图
+      const payload = message.payload as { bookmarkId: string; theme?: 'light' | 'dark' };
+      if (!payload?.bookmarkId) throw new Error('Missing bookmark id');
+      const tabId = await getActiveTabId();
+      const { result } = await captureScreenshot(tabId, { theme: payload.theme ?? 'light' });
+      const tab = await chrome.tabs.get(tabId);
+      const screenshot = await bookmarkAPI.uploadScreenshot(payload.bookmarkId, {
+        image: result.dataUrl,
+        width: result.width,
+        height: result.height,
+        source_url: tab.url || '',
+        title: tab.title || '',
+      });
+      return { success: true, data: screenshot };
     }
 
     case 'SAVE_BOOKMARK': {

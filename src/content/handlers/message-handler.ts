@@ -40,6 +40,12 @@ export function setupMessageHandler() {
         return true;
       }
 
+      // 网站截图：提取正文与图片（渲染在离屏文档中完成）
+      if (message.type === 'EXTRACT_SCREENSHOT_CONTENT') {
+        handleExtractScreenshotContent(sendResponse);
+        return true;
+      }
+
       // SingleFile 页面捕获
       if (message.type === 'CAPTURE_PAGE') {
         handleCapturePage(message, sendResponse);
@@ -91,6 +97,37 @@ async function handleExtractPageInfo(
         content: '',
         thumbnail: '',
       },
+    });
+  }
+}
+
+async function handleExtractScreenshotContent(
+  sendResponse: (response: MessageResponse) => void
+) {
+  try {
+    if (document.readyState === 'loading') {
+      await new Promise((resolve) => {
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', resolve, { once: true });
+        } else {
+          resolve(null);
+        }
+      });
+    }
+
+    const { extractScreenshotContent } = await import('../screenshot');
+    const data = extractScreenshotContent(document, window.location.href);
+
+    if (!data) {
+      sendResponse({ success: false, error: 'NO_CONTENT' });
+      return;
+    }
+
+    sendResponse({ success: true, data });
+  } catch (error) {
+    sendResponse({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
     });
   }
 }

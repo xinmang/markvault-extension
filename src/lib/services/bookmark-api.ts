@@ -10,6 +10,7 @@ import { StorageService } from '@/lib/utils/storage';
 import { createTMarksClient, type TMarksBookmark, type TMarksTag } from '@/lib/api';
 import { logger } from '@/lib/utils/logger';
 import { normalizeApiUrl } from '@/lib/constants/urls';
+import type { BookmarkScreenshot, UploadScreenshotRequest } from '@/lib/api/screenshots';
 
 export interface ExistingBookmarkData {
   id: string;
@@ -413,6 +414,22 @@ export class BookmarkAPIClient {
   /**
    * Test API connection
    */
+  /**
+   * 上传网站截图（同一书签只保留最新一张）
+   */
+  async uploadScreenshot(bookmarkId: string, data: UploadScreenshotRequest): Promise<BookmarkScreenshot> {
+    const client = await this.ensureClient();
+
+    try {
+      const response = await client.screenshots.uploadScreenshot(bookmarkId, data);
+      await this.notifyWebAppDataChanged();
+      return response.data.screenshot;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : '截图上传失败';
+      throw new AppError('BOOKMARK_SITE_ERROR' as ErrorCode, message, { originalError: error });
+    }
+  }
+
   async testConnection(): Promise<boolean> {
     try {
       const client = await this.ensureClient();

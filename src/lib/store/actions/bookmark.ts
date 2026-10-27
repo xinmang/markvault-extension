@@ -5,6 +5,7 @@
 import type { Message } from '@/types';
 import type { ExistingBookmarkData } from '@/lib/services/bookmark-api';
 import { t } from '@/lib/i18n';
+import { resolveScreenshotTheme } from '@/lib/utils/screenshot-prefs';
 
 export interface BookmarkActions {
   existingBookmark: ExistingBookmarkData | null;
@@ -13,6 +14,7 @@ export interface BookmarkActions {
   updateExistingBookmarkTags: (bookmarkId: string, tags: string[]) => Promise<void>;
   updateExistingBookmarkDescription: (bookmarkId: string, description: string) => Promise<void>;
   createSnapshotForBookmark: (bookmarkId: string) => Promise<void>;
+  createScreenshotForBookmark: (bookmarkId: string) => Promise<void>;
   syncCache: () => Promise<void>;
 }
 
@@ -21,7 +23,7 @@ export const createBookmarkActions = (set: any, get: any): BookmarkActions => ({
   setExistingBookmark: (bookmark) => set({ existingBookmark: bookmark }),
 
   saveBookmark: async () => {
-    const { currentPage, selectedTags, includeThumbnail, createSnapshot, isPublic } = get();
+    const { currentPage, selectedTags, includeThumbnail, createSnapshot, createScreenshot, isPublic, config } = get();
 
     if (!currentPage) {
       set({ error: t('error_no_page_info') });
@@ -47,6 +49,8 @@ export const createBookmarkActions = (set: any, get: any): BookmarkActions => ({
           tags: selectedTags,
           thumbnail: includeThumbnail ? currentPage.thumbnail : undefined,
           createSnapshot,
+          createScreenshot,
+          screenshotTheme: resolveScreenshotTheme(config?.preferences?.screenshotTheme),
           is_public: isPublic
         }
       });
@@ -101,7 +105,11 @@ export const createBookmarkActions = (set: any, get: any): BookmarkActions => ({
           successMessage: toastMessage,
           isLoading: false,
           isSaving: false,
-          lastSaveDurationMs: elapsedMs
+          lastSaveDurationMs: elapsedMs,
+          // 书签已保存，截图失败只作为提示，不影响保存结果
+          error: saveResult?.screenshotError
+            ? t('error_screenshot_upload', saveResult.screenshotError === 'NO_CONTENT' ? t('popup_screenshot_no_content') : saveResult.screenshotError)
+            : null
         });
 
         chrome.notifications.create({
@@ -246,6 +254,19 @@ export const createBookmarkActions = (set: any, get: any): BookmarkActions => ({
         isSaving: false
       });
     }
+  },
+
+  createScreenshotForBookmark: async (bookmarkId: string) => {
+    const response = await chrome.runtime.sendMessage<Message, any>({
+      type: 'UPLOAD_SCREENSHOT',
+      payload: { bookmarkId, theme: resolveScreenshotTheme(get().config?.preferences?.screenshotTheme) }
+    });
+    if (!response?.success) {
+      const reason = response?.error === 'NO_CONTENT' ? t('popup_screenshot_no_content') : response?.error || 'Unknown error';
+      // 抛给对话框显示具体原因（例如没有正文、API Key 缺少修改权限）
+      throw new Error(t('error_screenshot_upload', reason));
+    }
+    set({ successMessage: t('msg_screenshot_uploaded'), existingBookmark: null });
   },
 
   syncCache: async () => {

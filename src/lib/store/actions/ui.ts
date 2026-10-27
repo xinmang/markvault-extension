@@ -17,6 +17,7 @@ export interface UIActions {
   lastRecommendationDurationMs: number | null;
   includeThumbnail: boolean;
   createSnapshot: boolean;
+  createScreenshot: boolean;
   isPublic: boolean;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
@@ -24,6 +25,7 @@ export interface UIActions {
   setLoadingMessage: (message: string | null) => void;
   setIncludeThumbnail: (value: boolean) => void;
   setCreateSnapshot: (value: boolean) => void;
+  setCreateScreenshot: (value: boolean) => void;
   setIsPublic: (value: boolean) => void;
 }
 
@@ -40,6 +42,7 @@ export const createUIActions = (set: any): UIActions => ({
   lastRecommendationDurationMs: null,
   includeThumbnail: false,
   createSnapshot: false,
+  createScreenshot: false,
   isPublic: false,
 
   setLoading: (loading) => set({ isLoading: loading }),
@@ -48,5 +51,6 @@ export const createUIActions = (set: any): UIActions => ({
   setLoadingMessage: (message) => set({ loadingMessage: message }),
   setIncludeThumbnail: (value) => set({ includeThumbnail: value }),
   setCreateSnapshot: (value) => set({ createSnapshot: value }),
+  setCreateScreenshot: (value) => set({ createScreenshot: value }),
   setIsPublic: (value) => set({ isPublic: value }),
 });

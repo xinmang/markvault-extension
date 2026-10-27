@@ -5,6 +5,7 @@
 import type { PageInfo, Message, StorageConfig } from '@/types';
 import { t } from '@/lib/i18n';
 import { getFallbackDescription, normalizePageText } from '@/lib/utils/page-description';
+import { defaultCreateScreenshot } from '@/lib/utils/screenshot-prefs';
 
 export interface PageActions {
   currentPage: PageInfo | null;
@@ -16,6 +17,7 @@ export interface PageActions {
 type PageState = PageActions & {
   config: StorageConfig | null;
   includeThumbnail: boolean;
+  createScreenshot: boolean;
   isPublic: boolean;
 };
 
@@ -31,6 +33,8 @@ const resetPageFeedback = () => ({
   lastRecommendationSource: null,
   lastRecommendationMessage: null,
   lastRecommendationDurationMs: null,
+  descriptionStatus: 'idle',
+  descriptionMessage: null,
 });
 
 export const createPageActions = (set: any, get: () => PageState): PageActions => ({
@@ -46,6 +50,10 @@ export const createPageActions = (set: any, get: () => PageState): PageActions =
       currentPage: page,
       pageRevision: isSamePage ? state.pageRevision : state.pageRevision + 1,
       includeThumbnail: Boolean(page?.thumbnail) && (isSamePage ? state.includeThumbnail : defaultIncludeThumbnail),
+      // 截图网站列表中的页面（如 x.com、linux.do）默认生成网站截图
+      createScreenshot: isSamePage
+        ? state.createScreenshot
+        : Boolean(page && state.config && defaultCreateScreenshot(page.url, state.config.preferences)),
       isPublic: isSamePage ? state.isPublic : defaultIsPublic,
     };
   }),

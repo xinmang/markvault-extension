@@ -8,6 +8,7 @@ import type { NewtabFolder, NewtabSuggestion } from './useNewtabState';
 import { sendMessage } from '@/lib/utils/messaging';
 import { useAppStore } from '@/lib/store';
 import { t } from '@/lib/i18n';
+import { isAIConfigured } from '@/lib/services/ai-connection';
 
 interface UseNewtabHandlersProps {
   currentPage: PageInfo | null;
@@ -80,7 +81,7 @@ export function useNewtabHandlers({
         Boolean(
           config &&
             config.preferences.enableNewtabAI &&
-            config.aiConfig.apiKeys[config.aiConfig.provider]
+            isAIConfigured(config)
         );
 
       if (shouldAutoRecommend && newtabFoldersLoaded) {

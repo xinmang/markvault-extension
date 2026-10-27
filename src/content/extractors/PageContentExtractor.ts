@@ -16,6 +16,16 @@ export class PageContentExtractor {
     '[role="navigation"], [role="dialog"], [role="banner"], [role="contentinfo"]';
 
   /**
+   * 明确标记为正文的区域：GitHub 的 README / Issue 正文、文章微数据。
+   * 这些页面的 main 里先是文件列表和导航，按 main 读取只能拿到页面框架文字。
+   */
+  private static readonly READABLE_BODY_SELECTORS = [
+    'article.markdown-body',
+    '.markdown-body',
+    '[itemprop="articleBody"]',
+  ];
+
+  /**
    * Extract page information
    */
   extract(): PageInfo {
@@ -103,12 +113,12 @@ export class PageContentExtractor {
 
   /**
    * 查找当前页面的正文根节点。
-   * 按 main → [role=main] → article 的优先顺序遍历同类全部候选，
+   * 按明确的正文区域 → main → [role=main] → article 的优先顺序遍历同类全部候选，
    * 跳过隐藏的（含隐藏祖先）以及位于导航、侧栏、对话框等排除区域内的候选；
    * 全部不可用时才退回可见的 body，都不可用则视为无正文。
    */
   private findContentRoot(): HTMLElement | null {
-    const selectors = ['main', '[role="main"]', 'article'];
+    const selectors = [...PageContentExtractor.READABLE_BODY_SELECTORS, 'main', '[role="main"]', 'article'];
 
     for (const selector of selectors) {
       for (const candidate of Array.from(document.querySelectorAll<HTMLElement>(selector))) {

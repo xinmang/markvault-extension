@@ -17,6 +17,7 @@ interface BookmarkExistsDialogProps {
   onUpdateTags: (tags: string[]) => Promise<void>;
   onUpdateDescription: (description: string) => Promise<void>;
   onCreateSnapshot: () => Promise<void>;
+  onCreateScreenshot: () => Promise<void>;
   onCancel: () => void;
 }
 
@@ -26,6 +27,7 @@ export function BookmarkExistsDialog({
   onUpdateTags,
   onUpdateDescription,
   onCreateSnapshot,
+  onCreateScreenshot,
   onCancel,
 }: BookmarkExistsDialogProps) {
   const state = useBookmarkExistsState(bookmark);
@@ -39,6 +41,7 @@ export function BookmarkExistsDialog({
     onUpdateTags,
     onUpdateDescription,
     onCreateSnapshot,
+    onCreateScreenshot,
     onCancel,
   });
 

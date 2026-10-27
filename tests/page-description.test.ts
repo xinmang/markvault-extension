@@ -134,3 +134,33 @@ describe('描述归一化与页面身份', () => {
     expect(isSamePageUrl('https://example.com/#/a', 'https://example.com/#/b')).toBe(false);
   });
 });
+
+describe('正文区域选择', () => {
+  beforeEach(() => {
+    window.history.replaceState({}, '', '/vercel/next.js');
+    document.head.innerHTML = '<title>vercel/next.js</title>';
+  });
+
+  const extract = () => new PageContentExtractor().extract();
+
+  it('GitHub 仓库页读取 README 正文而不是文件列表', () => {
+    document.body.innerHTML = `
+      <main>
+        <nav>Code Issues Pull requests Actions</nav>
+        <div class="file-list">Folders and files Name Last commit message .github packages</div>
+        <div id="readme"><article class="markdown-body"><h1>Next.js</h1><p>The React Framework for the Web.</p></article></div>
+      </main>`;
+    const page = extract();
+    expect(page.content).toContain('The React Framework for the Web.');
+    expect(page.content).not.toContain('Folders and files');
+  });
+
+  it('隐藏的 markdown 区域不会被当作正文', () => {
+    document.body.innerHTML = `
+      <main>
+        <p>可见的页面正文</p>
+        <div hidden><div class="markdown-body">隐藏的编辑预览</div></div>
+      </main>`;
+    expect(extract().content).toBe('可见的页面正文');
+  });
+});

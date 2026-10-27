@@ -46,6 +46,8 @@ export default defineConfig(({ mode }) => {
           popup: 'src/popup/index.html',
           options: 'src/options/index.html',
           newtab: 'src/newtab/index.html',
+          // 网站截图在离屏文档中渲染，页面不在 manifest 中引用，需要单独作为构建入口
+          offscreen: 'src/offscreen/index.html',
         },
         output: {
           manualChunks(id) {

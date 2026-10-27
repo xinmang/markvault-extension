@@ -226,6 +226,12 @@
   --tab-options-danger-bg: rgba(255, 255, 255, 0.06);
   --tab-options-danger-text: rgb(229 231 235);
 
+  /* 设置页新增控件的暗色取值（分段控件、焦点环、开关轨道） */
+  --tab-options-segment-bg: rgba(31, 41, 55, 0.7);
+  --tab-options-segment-text: rgb(209 213 219);
+  --tab-options-segment-hover-text: rgb(255 255 255);
+  --tab-options-switch-track-off: rgb(55 65 81);
+
   --tab-options-pref-card-bg: rgba(17, 24, 39, 0.9);
 
   --tab-options-tmarks-card-bg: rgba(17, 24, 39, 0.9);
@@ -325,3 +331,22 @@ body {
   background: var(--tab-scrollbar-thumb-dark-hover);
 }
 
+
+/* ==========================================================================
+ * 设置页专用：导航与保存条动效
+ * ========================================================================== */
+
+html {
+  scroll-behavior: smooth;
+}
+
+/* 保存条已预留底部空间，避免出现时内容跳动 */
+#root {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}

@@ -4,9 +4,10 @@
 
 import { t } from '@/lib/i18n';
 import { TIMEOUTS } from '@/lib/constants/timeouts';
+import type { BookmarkExistsAction } from './useBookmarkExistsState';
 
 interface UseBookmarkExistsHandlersProps {
-  selectedAction: 'snapshot' | 'update-tags' | 'update-description' | null;
+  selectedAction: BookmarkExistsAction | null;
   descriptionInput: string;
   newTags: string[];
   setIsProcessing: (processing: boolean) => void;
@@ -15,6 +16,7 @@ interface UseBookmarkExistsHandlersProps {
   onUpdateTags: (tags: string[]) => Promise<void>;
   onUpdateDescription: (description: string) => Promise<void>;
   onCreateSnapshot: () => Promise<void>;
+  onCreateScreenshot: () => Promise<void>;
   onCancel: () => void;
 }
 
@@ -28,6 +30,7 @@ export function useBookmarkExistsHandlers({
   onUpdateTags,
   onUpdateDescription,
   onCreateSnapshot,
+  onCreateScreenshot,
   onCancel,
 }: UseBookmarkExistsHandlersProps) {
   const handleConfirm = async () => {
@@ -48,6 +51,25 @@ export function useBookmarkExistsHandlers({
         setTimeout(() => {
           setIsProcessing(false);
         }, 2000);
+      }
+    } else if (selectedAction === 'screenshot') {
+      setIsProcessing(true);
+      setProcessingMessage(t('popup_screenshot_generating'));
+
+      try {
+        await onCreateScreenshot();
+        setProcessingMessage(t('msg_screenshot_uploaded'));
+
+        setTimeout(() => {
+          setIsProcessing(false);
+          onCancel();
+        }, 1500);
+      } catch (error) {
+        // 截图失败的原因（没有正文、缺少权限等）需要让用户看到，停留更久
+        setProcessingMessage(error instanceof Error ? error.message : t('error_screenshot_upload', ''));
+        setTimeout(() => {
+          setIsProcessing(false);
+        }, 3500);
       }
     } else if (selectedAction === 'update-tags') {
       setIsProcessing(true);

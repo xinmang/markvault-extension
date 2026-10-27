@@ -11,6 +11,7 @@ import type { ImportFormat, ImportOptions } from '@/types/import'
 import type { AIProvider } from '@/types'
 import type { EditableBookmark } from '../EditableBookmarkTable'
 import { useImportSteps } from '../useImportSteps'
+import { getDescriptionConnection, getTagConnection } from '@/lib/services/ai-connection'
 
 interface UseBookmarkImportOptions {
   mode: 'tmarks' | 'newtab'
@@ -63,15 +64,15 @@ export function useBookmarkImport(options: UseBookmarkImportOptions) {
   useEffect(() => {
     async function loadAIConfig() {
       const config = await StorageService.loadConfig()
-      const provider = config.aiConfig.provider
-      const apiKey = config.aiConfig.apiKeys[provider]
-      
-      if (provider && apiKey) {
+      // 批量整理需要生成文字：优先使用描述模型，主服务能生成文字时也可直接使用
+      const connection = getDescriptionConnection(config) ?? getTagConnection(config)
+
+      if (connection) {
         setAiConfig({
-          provider,
-          apiKey,
-          model: config.aiConfig.model,
-          apiUrl: config.aiConfig.apiUrls?.[provider]
+          provider: connection.provider,
+          apiKey: connection.apiKey,
+          model: connection.model,
+          apiUrl: connection.apiUrl
         })
       }
     }

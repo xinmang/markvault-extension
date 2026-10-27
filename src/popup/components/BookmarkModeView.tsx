@@ -4,6 +4,7 @@
 
 import type { PageInfo, ExistingTag, TagSuggestion } from '@/types';
 import type { TagTheme } from '@/lib/utils/tagStyles';
+import type { DescriptionStatus } from '@/lib/store/actions/recommend';
 import { TagList } from '@/components/TagList';
 import { PageInfoCard } from '@/components/PageInfoCard';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
@@ -20,6 +21,9 @@ interface BookmarkModeViewProps {
   isLoading: boolean;
   includeThumbnail: boolean;
   createSnapshot: boolean;
+  createScreenshot: boolean;
+  descriptionStatus: DescriptionStatus;
+  descriptionMessage: string | null;
   showTitleEdit: boolean;
   showDescEdit: boolean;
   titleOverride: string;
@@ -31,6 +35,9 @@ interface BookmarkModeViewProps {
   onSetDescriptionOverride: (value: string) => void;
   onToggleThumbnail: () => void;
   onToggleSnapshot: () => void;
+  onToggleScreenshot: () => void;
+  onPreviewScreenshot: () => void;
+  onRegenerateDescription: () => void;
   onToggleTitleEdit: () => void;
   onToggleDescEdit: () => void;
   onApplyTitle: () => void;
@@ -48,6 +55,9 @@ export function BookmarkModeView({
   isLoading,
   includeThumbnail,
   createSnapshot,
+  createScreenshot,
+  descriptionStatus,
+  descriptionMessage,
   showTitleEdit,
   showDescEdit,
   titleOverride,
@@ -59,6 +69,9 @@ export function BookmarkModeView({
   onSetDescriptionOverride,
   onToggleThumbnail,
   onToggleSnapshot,
+  onToggleScreenshot,
+  onPreviewScreenshot,
+  onRegenerateDescription,
   onToggleTitleEdit,
   onToggleDescEdit,
   onApplyTitle,
@@ -120,6 +133,9 @@ export function BookmarkModeView({
             <button type="button" onClick={onToggleSnapshot} className={`flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-150 ${createSnapshot ? 'bg-[var(--tab-popup-action-purple-bg)] text-[var(--tab-popup-action-purple-text)] hover:bg-[var(--tab-popup-action-purple-bg-hover)]' : 'bg-[var(--tab-popup-action-neutral-bg)] text-[var(--tab-popup-action-neutral-text)] hover:bg-[var(--tab-popup-action-neutral-bg-hover)]'}`} title={createSnapshot ? t('tooltip_create_snapshot') : t('tooltip_no_snapshot')}>
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
             </button>
+            <button type="button" onClick={onToggleScreenshot} aria-pressed={createScreenshot} className={`flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-150 ${createScreenshot ? 'bg-[var(--tab-popup-action-emerald-bg)] text-[var(--tab-popup-action-emerald-text)] hover:bg-[var(--tab-popup-action-emerald-bg-hover)]' : 'bg-[var(--tab-popup-action-neutral-bg)] text-[var(--tab-popup-action-neutral-text)] hover:bg-[var(--tab-popup-action-neutral-bg-hover)]'}`} title={createScreenshot ? t('tooltip_create_screenshot') : t('tooltip_no_screenshot')}>
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" /></svg>
+            </button>
             <button type="button" onClick={onToggleTitleEdit} className={`flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-150 ${showTitleEdit ? 'bg-[var(--tab-popup-action-blue-bg)] text-[var(--tab-popup-action-blue-text)] hover:bg-[var(--tab-popup-action-blue-bg-hover)]' : 'bg-[var(--tab-popup-action-neutral-bg)] text-[var(--tab-popup-action-neutral-text)] hover:bg-[var(--tab-popup-action-neutral-bg-hover)]'}`} title={showTitleEdit ? t('tooltip_edit_title_collapse') : t('tooltip_edit_title_expand')}>
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
             </button>
@@ -127,6 +143,12 @@ export function BookmarkModeView({
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h7" /></svg>
             </button>
           </div>
+          {createScreenshot && (
+            <div className="mb-2.5 flex items-center gap-2 rounded-lg bg-[var(--tab-popup-action-emerald-bg)] px-2.5 py-1.5 text-[11px] text-[var(--tab-popup-action-emerald-text)]">
+              <span className="min-w-0 flex-1">{t('popup_screenshot_hint')}</span>
+              <button type="button" onClick={onPreviewScreenshot} className="shrink-0 rounded-md px-1.5 py-0.5 font-semibold transition-colors hover:bg-[var(--tab-popup-action-emerald-bg-hover)]">{t('popup_screenshot_preview')}</button>
+            </div>
+          )}
           <div className="mb-2.5 space-y-2">
             {showTitleEdit && (
               <div className="animate-in slide-in-from-top-2 fade-in flex gap-2 duration-200">
@@ -141,6 +163,24 @@ export function BookmarkModeView({
               </div>
             )}
           </div>
+          {descriptionStatus !== 'idle' && (
+            <div className="mb-2 flex items-center gap-1.5 text-[11px] text-[var(--tab-popup-text-muted)]" role="status">
+              {descriptionStatus === 'generating' && (
+                <svg className="h-3.5 w-3.5 flex-shrink-0 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+              )}
+              {descriptionStatus === 'done' && (
+                <svg className="h-3.5 w-3.5 flex-shrink-0 text-[var(--tab-popup-section-emerald-icon)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+              )}
+              <span className="min-w-0 flex-1 truncate" title={descriptionMessage ?? undefined}>
+                {descriptionStatus === 'generating' && t('popup_description_generating')}
+                {descriptionStatus === 'done' && t('popup_description_generated')}
+                {descriptionStatus === 'failed' && t('popup_description_failed', descriptionMessage ?? '')}
+              </span>
+              {descriptionStatus !== 'generating' && (
+                <button type="button" onClick={onRegenerateDescription} className="shrink-0 rounded-md px-1.5 py-0.5 font-medium text-[var(--tab-popup-text)] transition-colors hover:bg-[var(--tab-popup-action-neutral-bg)]">{t('popup_description_regenerate')}</button>
+              )}
+            </div>
+          )}
           <PageInfoCard title={currentPage.title} url={currentPage.url} description={currentPage.description} thumbnail={includeThumbnail ? currentPage.thumbnail : undefined} thumbnails={includeThumbnail ? currentPage.thumbnails : undefined} favicon={currentPage.favicon} onThumbnailChange={onThumbnailChange} />
         </section>
       )}

@@ -5,6 +5,7 @@ import { tagRecommender } from './tag-recommender';
 import { TIMEOUTS } from '@/lib/constants/timeouts';
 import type { BookmarkInput, SaveResult } from '@/types';
 import { logger } from '@/lib/utils/logger';
+import { captureScreenshot, getActiveTabId, type CapturedScreenshot } from '@/background/services/screenshot';
 
 export class BookmarkService {
   /**
@@ -13,6 +14,17 @@ export class BookmarkService {
   async saveBookmark(bookmark: BookmarkInput): Promise<SaveResult> {
     let bookmarkId: string | undefined;
     let isExisting = false;
+
+    // 截图的提取与渲染不依赖书签 ID，与保存请求并行进行；结果不会抛出未处理的异常
+    const screenshotTask: Promise<{ ok: true; value: CapturedScreenshot } | { ok: false; error: string }> | null =
+      bookmark.createScreenshot
+        ? getActiveTabId()
+            .then((tabId) => captureScreenshot(tabId, { theme: bookmark.screenshotTheme ?? 'light' }))
+            .then(
+              (value) => ({ ok: true as const, value }),
+              (error: unknown) => ({ ok: false as const, error: error instanceof Error ? error.message : String(error) })
+            )
+        : null;
 
     logger.log('[BookmarkService] saveBookmark 开始:', {
       url: bookmark.url,
@@ -190,10 +202,35 @@ export class BookmarkService {
       }
     }
 
+    // 6. Upload screenshot if requested
+    let screenshotError: string | undefined;
+    if (screenshotTask && bookmarkId) {
+      const captured = await screenshotTask;
+      if (captured.ok) {
+        try {
+          await bookmarkAPI.uploadScreenshot(bookmarkId, {
+            image: captured.value.result.dataUrl,
+            width: captured.value.result.width,
+            height: captured.value.result.height,
+            source_url: bookmark.url,
+            title: bookmark.title,
+          });
+        } catch (error) {
+          screenshotError = error instanceof Error ? error.message : String(error);
+        }
+      } else {
+        screenshotError = captured.error;
+      }
+      if (screenshotError) {
+        logger.warn('[BookmarkService] 截图未能保存:', screenshotError);
+      }
+    }
+
     return {
       success: true,
       bookmarkId: bookmarkId,
-      message: isExisting ? t('msg_bookmark_exists_snapshot') : undefined
+      message: isExisting ? t('msg_bookmark_exists_snapshot') : undefined,
+      screenshotError
     };
   }
 

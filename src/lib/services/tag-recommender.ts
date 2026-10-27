@@ -4,6 +4,7 @@ import { getAIProvider } from '@/lib/providers';
 import { normalizeTranslatedText } from '@/lib/utils/text';
 import { logger } from '@/lib/utils/logger';
 import { bookmarkAPI } from './bookmark-api';
+import { getTagConnection, isDescriptionAIActive } from './ai-connection';
 import type { PageInfo, RecommendationResult, AIRequest, TagSuggestion, AIResponse, AIProvider } from '@/types';
 
 export class TagRecommender {
@@ -19,9 +20,9 @@ export class TagRecommender {
       const contextPromise = this.getContext();
 
       const config = await configPromise;
-      const apiKey = config.aiConfig.apiKeys[config.aiConfig.provider];
+      const connection = getTagConnection(config);
 
-      if (!apiKey) {
+      if (!connection) {
         return this.fallbackRecommendation(pageInfo);
       }
 
@@ -42,17 +43,16 @@ export class TagRecommender {
         }
       };
 
-      // Get API URL and custom prompt
-      const apiUrl = config.aiConfig.apiUrls?.[config.aiConfig.provider];
+      // Get custom prompt
       const customPrompt = config.aiConfig.enableCustomPrompt ? config.aiConfig.customPrompt : undefined;
 
       // Call AI with retry (increased timeout to 30 seconds)
       const aiResponse = await this.callAIWithRetry(
         aiRequest,
-        apiKey,
-        config.aiConfig.provider as AIProvider,
-        config.aiConfig.model,
-        apiUrl,
+        connection.apiKey,
+        connection.provider as AIProvider,
+        connection.model,
+        connection.apiUrl,
         customPrompt,
         1,
         undefined
@@ -80,13 +80,14 @@ export class TagRecommender {
       const tags = this.deduplicateAndSort(verifiedTags);
 
       // 标题 / 描述的中文翻译：仅生成式模型会返回，且必须是中文才采用。
-      // TypeSafe(jev) 这类纯判定模型 supportsTranslation = false，直接跳过，
-      // 页面描述保持抓取到的原文。
-      const provider = getAIProvider(config.aiConfig.provider as AIProvider);
-      const translatedTitle = provider.supportsTranslation
+      // TypeSafe(jev) 这类纯判定模型 supportsTranslation = false，直接跳过。
+      // 开启了独立的描述模型时，标题与描述统一交给描述模型，这里不再回填，避免两处结果互相覆盖。
+      const provider = getAIProvider(connection.provider as AIProvider);
+      const useTranslations = provider.supportsTranslation && !isDescriptionAIActive(config);
+      const translatedTitle = useTranslations
         ? normalizeTranslatedText(aiResponse.translatedTitle)
         : undefined;
-      const translatedDescription = provider.supportsTranslation
+      const translatedDescription = useTranslations
         ? normalizeTranslatedText(aiResponse.translatedDescription)
         : undefined;
 

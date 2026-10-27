@@ -25,6 +25,8 @@ interface InvokeParams {
   model?: string;
   apiUrl?: string;
   prompt: string;
+  /** 覆盖默认的标签推荐系统提示词，例如描述生成 */
+  systemPrompt?: string;
   temperature?: number;
   maxTokens?: number;
 }
@@ -164,7 +166,7 @@ const buildOpenAIStyleRequest = (
     defaultMaxTokens?: number;
   }
 ): RequestPayload => {
-  const { apiKey, apiUrl, model, prompt, temperature, maxTokens } = params;
+  const { apiKey, apiUrl, model, prompt, temperature, maxTokens, systemPrompt } = params;
 
   let baseUrl = apiUrl?.trim() || defaultBaseUrl;
   baseUrl = baseUrl.replace(/\/$/, '');
@@ -184,7 +186,7 @@ const buildOpenAIStyleRequest = (
     messages: [
       {
         role: 'system',
-        content: SYSTEM_PROMPT
+        content: systemPrompt || SYSTEM_PROMPT
       },
       {
         role: 'user',
@@ -235,7 +237,7 @@ const providerConfigs: Record<ProviderName, ProviderConfig> = {
 
       const body = {
         model: params.model,
-        system: SYSTEM_PROMPT,
+        system: params.systemPrompt || SYSTEM_PROMPT,
         max_tokens: params.maxTokens ?? 1024,
         temperature: typeof params.temperature === 'number' ? params.temperature : 0.7,
         messages: [

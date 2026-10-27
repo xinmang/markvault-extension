@@ -1,17 +1,38 @@
-import { useMemo, useState } from 'react';
+/**
+ * MarkVault 扩展设置页
+ *
+ * 结构：顶部状态栏 + 左侧分组导航（窄屏为横向标签）+ 单分区内容 + 底部保存条
+ */
+
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ErrorMessage } from '@/components/ErrorMessage';
 import { SuccessMessage } from '@/components/SuccessMessage';
-import { AIConfigSection } from './components/AIConfigSection';
-import { TMarksConfigSection } from './components/TMarksConfigSection';
-import { PreferencesSection } from './components/PreferencesSection';
-import { CacheStatusSection } from './components/CacheStatusSection';
-import { PresetModal } from './components/PresetModal';
-import { TMarksTagSection } from './components/TMarksTagSection';
-import { NewTabTagSection } from './components/NewTabTagSection';
-import type { FormDataSetter } from '@/types/form';
-import { ImportSection } from './components/ImportSection';
-import { useOptionsForm } from './hooks/useOptionsForm';
 import { t } from '@/lib/i18n';
+import { useOptionsForm } from './hooks/useOptionsForm';
+import { TopBar, resolveMarkVaultStatus } from './components/layout/TopBar';
+import { SideNav } from './components/layout/SideNav';
+import { SaveBar } from './components/layout/SaveBar';
+import { ConnectionSection } from './components/sections/ConnectionSection';
+import { AIServiceSection } from './components/sections/AIServiceSection';
+import { TaggingSection } from './components/sections/TaggingSection';
+import { DescriptionSection } from './components/sections/DescriptionSection';
+import { SaveOptionsSection } from './components/sections/SaveOptionsSection';
+import { ScreenshotSection } from './components/sections/ScreenshotSection';
+import { NewTabFolderSection } from './components/sections/NewTabFolderSection';
+import { AppearanceSection } from './components/sections/AppearanceSection';
+import { ImportSettingsSection } from './components/sections/ImportSettingsSection';
+import { DataSyncSection } from './components/sections/DataSyncSection';
+import { DEFAULT_SECTION, isSectionId, type SectionId } from './components/sections/sections';
+import type { FormPatch } from './components/sections/types';
+import { getEffectiveDescriptionModel, getEffectiveTagModel, hasUsableDescriptionModel } from './components/sections/derived';
+
+type FormPatchSetter = (values: FormPatch) => void;
+
+function readSectionFromHash(): SectionId {
+  if (typeof window === 'undefined') return DEFAULT_SECTION;
+  const raw = window.location.hash.replace(/^#/, '').trim();
+  return isSectionId(raw) ? raw : DEFAULT_SECTION;
+}
 
 export function Options() {
   const {
@@ -20,191 +41,228 @@ export function Options() {
     isLoading,
     setError,
     setSuccessMessage,
-
     formData,
     setFormData,
-
+    isDirty,
+    loaded,
+    discardChanges,
     stats,
-    isTesting,
-
-    availableModels,
-    isFetchingModels,
-    modelFetchError,
-    modelFetchSupported,
-
-    allSavedConnections,
-
-    isPresetModalOpen,
-    presetLabel,
-    isSavingPreset,
-    presetError,
-
-    setPresetLabel,
-
+    tagModels,
+    descriptionModels,
+    testing,
+    testResults,
     handleProviderChange,
-    refreshModelOptions,
+    handleDescriptionProviderChange,
     handleSave,
     handleSync,
-    formatDate,
+    handleTest,
     handleReset,
-    handleTestAPI,
-
-    handleSaveConnectionPreset,
-    handleConfirmSaveConnectionPreset,
-    handleClosePresetModal,
-    handleApplySavedConnection,
-    handleDeleteSavedConnection,
+    formatDate,
   } = useOptionsForm();
 
-  type OptionsTab = 'ai' | 'tmarkstag' | 'newtabtag' | 'import' | 'preferences' | 'tmarks';
-  const [activeTab, setActiveTab] = useState<OptionsTab>('ai');
+  const [section, setSection] = useState<SectionId>(readSectionFromHash);
+  const [saving, setSaving] = useState(false);
 
-  const tabs = useMemo(
-    () =>
-      [
-        { id: 'ai' as const, label: t('options_tab_ai') },
-        { id: 'tmarkstag' as const, label: t('options_tab_tmarks_manage') },
-        { id: 'newtabtag' as const, label: t('options_tab_newtab_manage') },
-        { id: 'import' as const, label: t('options_tab_import') },
-        { id: 'preferences' as const, label: t('options_tab_preferences') },
-        { id: 'tmarks' as const, label: t('options_tab_tmarks') },
-      ],
-    []
+  // 记住最后一次分区：写入 location.hash，刷新或外部链接都能回到同一位置
+  useEffect(() => {
+    const onHashChange = () => setSection(readSectionFromHash());
+    window.addEventListener('hashchange', onHashChange);
+    if (!window.location.hash) {
+      window.history.replaceState(null, '', `#${DEFAULT_SECTION}`);
+    }
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
+  const selectSection = useCallback((next: SectionId) => {
+    setSection(next);
+    if (window.location.hash !== `#${next}`) {
+      window.location.hash = next;
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
+
+  const patch = useCallback<FormPatchSetter>(
+    (values) => {
+      setFormData((prev) => ({ ...prev, ...values }));
+    },
+    [setFormData]
   );
 
+  const onSave = useCallback(async () => {
+    setSaving(true);
+    try {
+      await handleSave();
+    } finally {
+      setSaving(false);
+    }
+  }, [handleSave]);
+
+  const markVaultStatus = useMemo(
+    () => resolveMarkVaultStatus(Boolean(formData.bookmarkApiKey.trim()), testResults.markvault?.ok),
+    [formData.bookmarkApiKey, testResults.markvault]
+  );
+
+  const tagModel = useMemo(() => getEffectiveTagModel(formData), [formData]);
+  const descriptionModel = useMemo(() => getEffectiveDescriptionModel(formData), [formData]);
+  const descriptionModelAvailable = useMemo(() => hasUsableDescriptionModel(formData), [formData]);
+
+  if (!loaded) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[color:var(--tab-options-page-bg-via)]">
+        <div
+          className="h-8 w-8 animate-spin rounded-full border-2 border-[color:var(--tab-options-text-muted)] border-t-transparent"
+          role="status"
+          aria-label={t('options_loading')}
+        />
+      </div>
+    );
+  }
+
   return (
-    <>
-      {/* Notifications - Fixed at top */}
-      <div className="pointer-events-none fixed top-0 left-0 right-0 z-50 flex justify-center px-4 pt-4">
+    <div className="min-h-screen w-full bg-gradient-to-br from-[var(--tab-options-page-bg-from)] via-[var(--tab-options-page-bg-via)] to-[var(--tab-options-page-bg-to)]">
+      {/* 通知：固定在顶部居中 */}
+      <div className="pointer-events-none fixed left-0 right-0 top-[60px] z-50 flex justify-center px-4 pt-2">
         <div className="pointer-events-auto w-full max-w-md space-y-2">
           {error && <ErrorMessage message={error} onDismiss={() => setError(null)} />}
           {successMessage && <SuccessMessage message={successMessage} onDismiss={() => setSuccessMessage(null)} />}
         </div>
       </div>
 
-      <div className="min-h-screen w-screen bg-gradient-to-br from-[var(--tab-options-page-bg-from)] via-[var(--tab-options-page-bg-via)] to-[var(--tab-options-page-bg-to)]">
-        <div className="w-4/5 mx-auto px-6 py-12">
-          <div className="relative overflow-hidden rounded-3xl border border-[color:var(--tab-options-card-border)] bg-[color:var(--tab-options-card-bg)] shadow-sm backdrop-blur mb-10">
-            <div className="absolute inset-0 bg-gradient-to-br from-[color:var(--tab-options-hero-gradient-from)] via-[color:var(--tab-options-hero-gradient-via)] to-[color:var(--tab-options-hero-gradient-to)]" />
-            <div className="relative p-10">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[color:var(--tab-options-pill-bg)] text-sm font-medium text-[var(--tab-options-pill-text)]">
-                {t('options_title')}
-              </div>
-              <h1 className="mt-4 text-4xl font-bold text-[var(--tab-options-title)] tracking-tight">{t('options_subtitle')}</h1>
-              <p className="mt-3 max-w-2xl text-base text-[var(--tab-options-text)]">
-                {t('options_description')}
-              </p>
-              <p className="mt-2 text-sm text-[var(--tab-options-text-muted)]">
-                {t('options_global_hint')}
-              </p>
-              <div className="mt-6 flex items-center justify-between gap-4">
-                <div className="flex flex-wrap gap-3 text-xs font-medium text-[var(--tab-options-text-muted)]">
-                  <span className="px-3 py-1 rounded-full bg-[color:var(--tab-options-tag-bg)] border border-[color:var(--tab-options-tag-border)]">{t('options_tag_ai')}</span>
-                  <span className="px-3 py-1 rounded-full bg-[color:var(--tab-options-tag-bg)] border border-[color:var(--tab-options-tag-border)]">{t('options_tag_sync')}</span>
-                  <span className="px-3 py-1 rounded-full bg-[color:var(--tab-options-tag-bg)] border border-[color:var(--tab-options-tag-border)]">{t('options_tag_security')}</span>
-                </div>
-                <div className="flex gap-3">
-                  <button
-                    type="button"
-                    onClick={handleReset}
-                    className="rounded-lg border border-[color:var(--tab-options-button-border)] px-4 py-2 text-sm font-medium text-[var(--tab-options-button-text)] hover:bg-[var(--tab-options-button-hover-bg)] transition-colors whitespace-nowrap"
-                  >
-                    {t('btn_reset')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleSave}
-                    disabled={isLoading}
-                    className="rounded-lg bg-[var(--tab-options-button-primary-bg)] px-4 py-2 text-sm font-medium text-[var(--tab-options-button-primary-text)] shadow-sm hover:bg-[var(--tab-options-button-primary-hover)] disabled:cursor-not-allowed disabled:opacity-60 transition-colors whitespace-nowrap"
-                  >
-                    {isLoading ? t('btn_saving') : t('btn_save')}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
+      <TopBar
+        markVaultStatus={markVaultStatus}
+        aiTagModel={tagModel}
+        aiDescriptionModel={descriptionModel}
+      />
 
-          <div className="grid gap-8 lg:grid-cols-12">
-            <div className="lg:col-span-3">
-              <div className="sticky top-8 space-y-4">
-                <div className="rounded-2xl border border-[color:var(--tab-options-card-border)] bg-[color:var(--tab-options-card-bg)] shadow-sm backdrop-blur p-3">
-                  <div className="space-y-2">
-                    {tabs.map((tab) => (
-                      <button
-                        key={tab.id}
-                        type="button"
-                        onClick={() => setActiveTab(tab.id)}
-                        className={`w-full text-left px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
-                          activeTab === tab.id
-                            ? 'bg-[var(--tab-options-button-primary-bg)] text-[var(--tab-options-button-primary-text)]'
-                            : 'text-[var(--tab-options-text)] hover:bg-[var(--tab-options-button-hover-bg)]'
-                        }`}
-                      >
-                        {tab.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+      <div className="mx-auto max-w-[1100px] px-4 pb-32 pt-6 sm:px-6">
+        <div className="lg:grid lg:grid-cols-[200px_minmax(0,1fr)] lg:gap-10">
+          <SideNav active={section} onSelect={selectSection} />
 
-                <CacheStatusSection stats={stats} handleSync={handleSync} isLoading={isLoading} formatDate={formatDate} />
-              </div>
-            </div>
+          <main className="mx-auto w-full max-w-[760px] space-y-5">
+            {section === 'connection' && (
+              <ConnectionSection
+                apiUrl={formData.bookmarkApiUrl}
+                apiKey={formData.bookmarkApiKey}
+                onChange={patch}
+                onTest={() => void handleTest('markvault')}
+                isTesting={testing === 'markvault'}
+                testResult={testResults.markvault}
+              />
+            )}
 
-            <div className="lg:col-span-9 space-y-8">
-              {activeTab === 'ai' && (
-                <AIConfigSection
-                  formData={formData}
-                  setFormData={setFormData}
-                  handleProviderChange={handleProviderChange}
-                  handleTestConnection={handleTestAPI}
-                  isTesting={isTesting}
-                  availableModels={availableModels}
-                  isFetchingModels={isFetchingModels}
-                  modelFetchError={modelFetchError}
-                  onRefreshModels={refreshModelOptions}
-                  modelFetchSupported={modelFetchSupported}
-                  allSavedConnections={allSavedConnections}
-                  onApplySavedConnection={handleApplySavedConnection}
-                  onDeleteSavedConnection={handleDeleteSavedConnection}
-                  onSaveConnectionPreset={handleSaveConnectionPreset}
-                />
-              )}
+            {section === 'ai-service' && (
+              <AIServiceSection
+                provider={formData.aiProvider}
+                apiUrl={formData.apiUrl}
+                apiKey={formData.apiKey}
+                onProviderChange={handleProviderChange}
+                patch={patch}
+                tagModels={tagModels}
+                isTestingTags={testing === 'tags'}
+                tagTestResult={testResults.tags}
+                aiModel={formData.aiModel}
+                descriptionModel={formData.descriptionModel}
+                descriptionModels={descriptionModels}
+                descriptionServiceEnabled={formData.descriptionServiceEnabled}
+                descriptionProvider={formData.descriptionProvider}
+                descriptionApiUrl={formData.descriptionApiUrl}
+                descriptionApiKey={formData.descriptionApiKey}
+                onDescriptionProviderChange={handleDescriptionProviderChange}
+                onTestTags={() => void handleTest('tags')}
+                onTestDescription={() => void handleTest('description')}
+                isTestingDescription={testing === 'description'}
+                descriptionTestResult={testResults.description}
+                hasDescriptionModel={descriptionModelAvailable}
+              />
+            )}
 
-              {activeTab === 'tmarkstag' && (
-                <TMarksTagSection formData={formData} setFormData={setFormData as FormDataSetter} setSuccessMessage={setSuccessMessage} />
-              )}
+            {section === 'tagging' && (
+              <TaggingSection
+                enableAI={formData.enableAI}
+                maxSuggestedTags={formData.maxSuggestedTags}
+                enableCustomPrompt={formData.enableCustomPrompt}
+                customPrompt={formData.customPrompt}
+                patch={patch}
+              />
+            )}
 
-              {activeTab === 'newtabtag' && (
-                <NewTabTagSection formData={formData} setFormData={setFormData as FormDataSetter} setSuccessMessage={setSuccessMessage} />
-              )}
+            {section === 'description' && (
+              <DescriptionSection
+                enableAIDescription={formData.enableAIDescription}
+                enableDescriptionPrompt={formData.enableDescriptionPrompt}
+                descriptionPrompt={formData.descriptionPrompt}
+                hasDescriptionModel={descriptionModelAvailable}
+                onOpenAIService={() => selectSection('ai-service')}
+                patch={patch}
+              />
+            )}
 
-              {activeTab === 'import' && (
-                <ImportSection formData={formData} setSuccessMessage={setSuccessMessage} setError={setError} />
-              )}
+            {section === 'save-options' && (
+              <SaveOptionsSection
+                defaultIncludeThumbnail={formData.defaultIncludeThumbnail}
+                defaultCreateSnapshot={formData.defaultCreateSnapshot}
+                defaultIsPublic={formData.defaultIsPublic}
+                defaultCreateScreenshot={formData.defaultCreateScreenshot}
+                patch={patch}
+              />
+            )}
 
-              {activeTab === 'preferences' && (
-                <PreferencesSection formData={formData} setFormData={setFormData as FormDataSetter} />
-              )}
+            {section === 'screenshot' && (
+              <ScreenshotSection
+                screenshotDomains={formData.screenshotDomains}
+                screenshotTheme={formData.screenshotTheme}
+                patch={patch}
+              />
+            )}
 
-              {activeTab === 'tmarks' && (
-                <TMarksConfigSection formData={formData} setFormData={setFormData as FormDataSetter} />
-              )}
-            </div>
-          </div>
+            {section === 'newtab-folder' && (
+              <NewTabFolderSection
+                enableNewtabAI={formData.enableNewtabAI}
+                newtabFolderRecommendCount={formData.newtabFolderRecommendCount}
+                enableNewtabFolderPrompt={formData.enableNewtabFolderPrompt}
+                newtabFolderPrompt={formData.newtabFolderPrompt}
+                patch={patch}
+                setSuccessMessage={setSuccessMessage}
+              />
+            )}
+
+            {section === 'appearance' && (
+              <AppearanceSection
+                theme={formData.theme}
+                themeStyle={formData.themeStyle}
+                tagTheme={formData.tagTheme}
+                patch={patch}
+                onReset={handleReset}
+              />
+            )}
+
+            {section === 'import' && (
+              <ImportSettingsSection
+                formData={formData}
+                setSuccessMessage={setSuccessMessage}
+                setError={setError}
+                patch={patch}
+              />
+            )}
+
+            {section === 'data-sync' && (
+              <DataSyncSection
+                stats={stats}
+                isLoading={isLoading}
+                onSync={() => void handleSync()}
+                formatDate={formatDate}
+              />
+            )}
+          </main>
         </div>
       </div>
 
-      {isPresetModalOpen && (
-        <PresetModal
-          isOpen={isPresetModalOpen}
-          presetLabel={presetLabel}
-          presetError={presetError}
-          isSaving={isSavingPreset}
-          onClose={handleClosePresetModal}
-          onConfirm={handleConfirmSaveConnectionPreset}
-          onChangeLabel={setPresetLabel}
-        />
-      )}
-    </>
+      <SaveBar
+        visible={isDirty}
+        saving={saving}
+        onDiscard={discardChanges}
+        onSave={() => void onSave()}
+      />
+    </div>
   );
 }

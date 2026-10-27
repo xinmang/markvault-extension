@@ -1,15 +1,22 @@
-import type { StorageConfig, AIProvider, AIConnectionInfo } from '@/types';
+import type { StorageConfig, AIProvider, AIConfig } from '@/types';
+import type { LegacyAIConfigFields } from '@/types/ai';
 import { NEWTAB_FOLDER_PROMPT_TEMPLATE } from '@/lib/constants/newtabPrompts';
+
+/** 默认开启网站截图的网站：帖子正文比网页样式更重要的社区 */
+export const DEFAULT_SCREENSHOT_DOMAINS = ['x.com', 'twitter.com', 'linux.do'];
 
 const DEFAULT_CONFIG: StorageConfig = {
   aiConfig: {
     provider: 'openai',
-    apiKeys: {},
-    apiUrls: {},
+    apiUrl: '',
+    apiKey: '',
     model: 'gpt-4o',
+    descriptionModel: '',
+    descriptionService: { enabled: false, provider: 'deepseek', apiUrl: '', apiKey: '' },
+    enableDescriptionPrompt: false,
+    descriptionPrompt: undefined,
     enableCustomPrompt: false,
     customPrompt: undefined,
-    savedConnections: {}
   },
   bookmarkSite: {
     apiUrl: '',
@@ -29,94 +36,97 @@ const DEFAULT_CONFIG: StorageConfig = {
     newtabFolderRecommendCount: 15,
     enableNewtabAI: true,
     enableNewtabFolderPrompt: false,
-    newtabFolderPrompt: NEWTAB_FOLDER_PROMPT_TEMPLATE
+    newtabFolderPrompt: NEWTAB_FOLDER_PROMPT_TEMPLATE,
+    enableAIDescription: true,
+    defaultCreateScreenshot: false,
+    screenshotDomains: [...DEFAULT_SCREENSHOT_DOMAINS],
+    screenshotTheme: 'auto'
   }
 };
 
 const cloneDefaultConfig = (): StorageConfig => ({
   aiConfig: {
-    provider: DEFAULT_CONFIG.aiConfig.provider,
-    apiKeys: { ...DEFAULT_CONFIG.aiConfig.apiKeys },
-    apiUrls: { ...DEFAULT_CONFIG.aiConfig.apiUrls },
-    model: DEFAULT_CONFIG.aiConfig.model,
-    enableCustomPrompt: DEFAULT_CONFIG.aiConfig.enableCustomPrompt,
-    customPrompt: DEFAULT_CONFIG.aiConfig.customPrompt,
-    savedConnections: {}
+    ...DEFAULT_CONFIG.aiConfig,
+    descriptionService: { ...DEFAULT_CONFIG.aiConfig.descriptionService! }
   },
   bookmarkSite: { ...DEFAULT_CONFIG.bookmarkSite },
-  preferences: { ...DEFAULT_CONFIG.preferences }
+  preferences: {
+    ...DEFAULT_CONFIG.preferences,
+    screenshotDomains: [...(DEFAULT_CONFIG.preferences.screenshotDomains || [])]
+  }
 });
+
+const text = (value: unknown): string => (typeof value === 'string' ? value : '');
+
+/** 规范化域名列表：去协议、路径与 www.，转小写并去重 */
+export function normalizeScreenshotDomains(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    const domain = text(item)
+      .trim()
+      .toLowerCase()
+      .replace(/^[a-z]+:\/\//, '')
+      .replace(/[/?#].*$/, '')
+      .replace(/^www\./, '')
+      .replace(/^\*\./, '');
+    if (domain && /^[a-z0-9.-]+$/.test(domain) && domain.length <= 253) seen.add(domain);
+  }
+  return [...seen].slice(0, 100);
+}
+
+/**
+ * 读取 AI 配置并兼容旧版：旧版按服务商保存多套密钥与地址（apiKeys / apiUrls）以及“已保存配置”，
+ * 现在只保留当前服务商的一套连接，其余旧数据在下次保存时自然丢弃。
+ */
+function normalizeAIConfig(input: (Partial<AIConfig> & LegacyAIConfigFields) | undefined, defaults: AIConfig): AIConfig {
+  const provider = (input?.provider || defaults.provider) as AIProvider;
+  const legacyKey = text(input?.apiKeys?.[provider]);
+  const legacyUrl = text(input?.apiUrls?.[provider]);
+  const service = input?.descriptionService;
+  return {
+    provider,
+    apiKey: typeof input?.apiKey === 'string' ? input.apiKey : legacyKey,
+    apiUrl: typeof input?.apiUrl === 'string' ? input.apiUrl : legacyUrl,
+    model: input?.model ?? defaults.model,
+    descriptionModel: text(input?.descriptionModel),
+    descriptionService: {
+      enabled: Boolean(service?.enabled),
+      provider: (service?.provider || defaults.descriptionService!.provider) as AIProvider,
+      apiUrl: text(service?.apiUrl),
+      apiKey: text(service?.apiKey)
+    },
+    enableDescriptionPrompt: input?.enableDescriptionPrompt ?? defaults.enableDescriptionPrompt,
+    descriptionPrompt: input?.descriptionPrompt ?? defaults.descriptionPrompt,
+    customPrompt: input?.customPrompt ?? defaults.customPrompt,
+    enableCustomPrompt: input?.enableCustomPrompt ?? defaults.enableCustomPrompt,
+    ...(input?.maxImportGroups !== undefined ? { maxImportGroups: input.maxImportGroups } : {})
+  };
+}
 
 export class StorageService {
   private static STORAGE_KEY = 'config';
   private static configCache: StorageConfig | null = null;
   private static initialized = false;
 
-  private static cloneSavedConnections(
-    input?: Partial<Record<AIProvider, AIConnectionInfo[]>>
-  ): Partial<Record<AIProvider, AIConnectionInfo[]>> {
-    const result: Partial<Record<AIProvider, AIConnectionInfo[]>> = {};
-    if (!input) {
-      return result;
-    }
-
-    (Object.entries(input) as Array<[AIProvider, AIConnectionInfo[] | undefined]>).forEach(
-      ([provider, list]) => {
-        if (!Array.isArray(list)) {
-          return;
-        }
-        result[provider] = list.map(item => ({ ...item }));
-      }
-    );
-
-    return result;
-  }
-
-  private static mergeWithDefaults(config?: StorageConfig): StorageConfig {
+  static mergeWithDefaults(config?: StorageConfig): StorageConfig {
     const defaults = cloneDefaultConfig();
     if (!config) {
       return defaults;
     }
 
+    const preferences = { ...defaults.preferences, ...(config.preferences || {}) };
+    preferences.screenshotDomains = Array.isArray(config.preferences?.screenshotDomains)
+      ? normalizeScreenshotDomains(config.preferences.screenshotDomains)
+      : defaults.preferences.screenshotDomains;
+
     return {
-      aiConfig: {
-        provider: config.aiConfig?.provider || defaults.aiConfig.provider,
-        apiKeys: {
-          ...defaults.aiConfig.apiKeys,
-          ...(config.aiConfig?.apiKeys || {})
-        },
-        apiUrls: {
-          ...defaults.aiConfig.apiUrls,
-          ...(config.aiConfig?.apiUrls || {})
-        },
-        model: config.aiConfig?.model ?? defaults.aiConfig.model,
-        customPrompt: config.aiConfig?.customPrompt ?? defaults.aiConfig.customPrompt,
-        enableCustomPrompt: config.aiConfig?.enableCustomPrompt ?? defaults.aiConfig.enableCustomPrompt,
-        savedConnections: {
-          ...(defaults.aiConfig.savedConnections || {}),
-          ...(config.aiConfig?.savedConnections || {})
-        }
-      },
+      aiConfig: normalizeAIConfig(config.aiConfig, defaults.aiConfig),
       bookmarkSite: {
         apiUrl: config.bookmarkSite?.apiUrl ?? defaults.bookmarkSite.apiUrl,
         apiKey: config.bookmarkSite?.apiKey ?? defaults.bookmarkSite.apiKey
       },
-      preferences: {
-        theme: config.preferences?.theme ?? defaults.preferences.theme,
-        themeStyle: config.preferences?.themeStyle ?? defaults.preferences.themeStyle,
-        autoSync: config.preferences?.autoSync ?? defaults.preferences.autoSync,
-        syncInterval: config.preferences?.syncInterval ?? defaults.preferences.syncInterval,
-        maxSuggestedTags: config.preferences?.maxSuggestedTags ?? defaults.preferences.maxSuggestedTags,
-        enableAI: config.preferences?.enableAI ?? defaults.preferences.enableAI,
-        defaultIncludeThumbnail: config.preferences?.defaultIncludeThumbnail ?? defaults.preferences.defaultIncludeThumbnail,
-        defaultCreateSnapshot: config.preferences?.defaultCreateSnapshot ?? defaults.preferences.defaultCreateSnapshot,
-        defaultIsPublic: config.preferences?.defaultIsPublic ?? defaults.preferences.defaultIsPublic,
-        tagTheme: config.preferences?.tagTheme ?? defaults.preferences.tagTheme,
-        newtabFolderRecommendCount: config.preferences?.newtabFolderRecommendCount ?? defaults.preferences.newtabFolderRecommendCount,
-        enableNewtabAI: config.preferences?.enableNewtabAI ?? defaults.preferences.enableNewtabAI,
-        enableNewtabFolderPrompt: config.preferences?.enableNewtabFolderPrompt ?? defaults.preferences.enableNewtabFolderPrompt,
-        newtabFolderPrompt: config.preferences?.newtabFolderPrompt ?? defaults.preferences.newtabFolderPrompt
-      }
+      preferences
     };
   }
 
@@ -165,73 +175,18 @@ export class StorageService {
 
   /**
    * Save configuration to chrome.storage.local
+   * 写入的始终是规范化后的完整配置，旧版的多套配置字段不会再写回。
    */
   static async saveConfig(config: Partial<StorageConfig>): Promise<void> {
-    try {
-      const currentConfig = await this.loadConfig();
-      const hasSavedConnectionsOverride = Boolean(
-        config.aiConfig && Object.prototype.hasOwnProperty.call(config.aiConfig, 'savedConnections')
-      );
-
-      let nextSavedConnections: Partial<Record<AIProvider, AIConnectionInfo[]>>;
-      if (hasSavedConnectionsOverride) {
-        nextSavedConnections = this.cloneSavedConnections(config.aiConfig?.savedConnections);
-      } else {
-        nextSavedConnections = this.cloneSavedConnections({
-          ...(currentConfig.aiConfig.savedConnections || {}),
-          ...(config.aiConfig?.savedConnections || {})
-        });
-      }
-
-      const { savedConnections: _ignoredSavedConnections, ...aiConfigUpdates } = config.aiConfig || {};
-      const newConfig: StorageConfig = {
-        ...currentConfig,
-        ...config,
-        aiConfig: {
-          ...currentConfig.aiConfig,
-          ...aiConfigUpdates,
-          savedConnections: nextSavedConnections
-        },
-        bookmarkSite: {
-          ...currentConfig.bookmarkSite,
-          ...(config.bookmarkSite || {})
-        },
-        preferences: {
-          ...currentConfig.preferences,
-          ...(config.preferences || {})
-        }
-      };
-
-      await chrome.storage.local.set({ [this.STORAGE_KEY]: newConfig });
-      this.configCache = this.mergeWithDefaults(newConfig);
-    } catch (error) {
-      throw error;
-    }
-  }
-
-  /**
-   * Get AI API Key for the current provider
-   */
-  static async getAIApiKey(): Promise<string | undefined> {
-    const config = await this.loadConfig();
-    const provider = config.aiConfig.provider;
-    return config.aiConfig.apiKeys[provider];
-  }
-
-  /**
-   * Set AI API Key for a specific provider
-   */
-  static async setAIApiKey(provider: AIProvider, apiKey: string): Promise<void> {
-    const config = await this.loadConfig();
-    await this.saveConfig({
-      aiConfig: {
-        ...config.aiConfig,
-        apiKeys: {
-          ...config.aiConfig.apiKeys,
-          [provider]: apiKey
-        }
-      }
+    const currentConfig = await this.loadConfig();
+    const newConfig = this.mergeWithDefaults({
+      aiConfig: { ...currentConfig.aiConfig, ...(config.aiConfig || {}) },
+      bookmarkSite: { ...currentConfig.bookmarkSite, ...(config.bookmarkSite || {}) },
+      preferences: { ...currentConfig.preferences, ...(config.preferences || {}) }
     });
+
+    await chrome.storage.local.set({ [this.STORAGE_KEY]: newConfig });
+    this.configCache = newConfig;
   }
 
   /**

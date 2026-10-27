@@ -6,14 +6,78 @@ import type { Message } from '@/types';
 import { t } from '@/lib/i18n';
 import { normalizeTranslatedText } from '@/lib/utils/text';
 
+export type DescriptionStatus = 'idle' | 'generating' | 'done' | 'failed';
+
 export interface RecommendActions {
   recommendTags: () => Promise<void>;
+  /** 描述模型生成描述的进度，供弹窗显示 */
+  descriptionStatus: DescriptionStatus;
+  descriptionMessage: string | null;
+  generateDescription: () => Promise<void>;
 }
 
 export const createRecommendActions = (set: any, get: any): RecommendActions => {
   let latestRequestId = 0;
+  let latestDescriptionRequestId = 0;
 
   return {
+    descriptionStatus: 'idle',
+    descriptionMessage: null,
+
+    generateDescription: async () => {
+      const { currentPage, pageRevision } = get();
+      if (!currentPage) return;
+
+      const requestId = ++latestDescriptionRequestId;
+      const isCurrentRequest = () => requestId === latestDescriptionRequestId
+        && get().pageRevision === pageRevision
+        && get().currentPage?.url === currentPage.url;
+
+      set({ descriptionStatus: 'generating', descriptionMessage: null });
+      try {
+        const response = await chrome.runtime.sendMessage<Message, any>({
+          type: 'GENERATE_DESCRIPTION',
+          payload: currentPage
+        });
+        if (!isCurrentRequest()) return;
+        if (response?.success === false) {
+          throw new Error(response.error || t('options_test_description_empty'));
+        }
+
+        const data = response?.data as { description?: string; title?: string } | null | undefined;
+        if (!data) {
+          // 未配置描述模型：保持原描述，不显示状态
+          set({ descriptionStatus: 'idle' });
+          return;
+        }
+
+        const description = normalizeTranslatedText(data.description);
+        const title = normalizeTranslatedText(data.title);
+        // 只回填仍与请求原文一致的字段，保留等待期间用户手动修改的内容
+        const latestPage = get().currentPage;
+        if (latestPage && (description || title)) {
+          set({
+            currentPage: {
+              ...latestPage,
+              title: latestPage.title === currentPage.title ? title || latestPage.title : latestPage.title,
+              description: latestPage.description === currentPage.description
+                ? description || latestPage.description : latestPage.description
+            }
+          });
+        }
+        set({
+          descriptionStatus: description ? 'done' : 'failed',
+          descriptionMessage: description ? null : t('options_test_description_empty')
+        });
+      } catch (error) {
+        if (!isCurrentRequest()) return;
+        set({
+          descriptionStatus: 'failed',
+          descriptionMessage: error instanceof Error ? error.message : t('options_test_description_empty')
+        });
+      }
+    },
+
     recommendTags: async () => {
       const { currentPage, pageRevision } = get();
 

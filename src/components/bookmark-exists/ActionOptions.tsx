@@ -3,12 +3,13 @@
  */
 
 import { t } from '@/lib/i18n';
+import type { BookmarkExistsAction } from './useBookmarkExistsState';
 
 interface ActionOptionsProps {
-  selectedAction: 'snapshot' | 'update-tags' | 'update-description' | null;
+  selectedAction: BookmarkExistsAction | null;
   hasNewTags: boolean;
   descriptionInput: string;
-  onActionChange: (action: 'snapshot' | 'update-tags' | 'update-description') => void;
+  onActionChange: (action: BookmarkExistsAction) => void;
   onDescriptionChange: (description: string) => void;
 }
 
@@ -47,6 +48,32 @@ export function ActionOptions({
           </div>
           <div className="text-xs text-[var(--tab-text-muted)] mt-1">
             {t('action_create_snapshot_desc')}
+          </div>
+        </div>
+      </label>
+
+      {/* Create post screenshot */}
+      <label
+        className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
+          selectedAction === 'screenshot'
+            ? 'border-[color:var(--tab-message-info-icon)] bg-[color:var(--tab-message-info-bg)]'
+            : 'border-[color:var(--tab-border)] hover:border-[color:var(--tab-border-strong)]'
+        }`}
+      >
+        <input
+          type="radio"
+          name="action"
+          value="screenshot"
+          checked={selectedAction === 'screenshot'}
+          onChange={() => onActionChange('screenshot')}
+          className="mt-0.5 w-4 h-4 text-[var(--tab-message-info-icon)] focus:ring-[var(--tab-message-info-icon)]"
+        />
+        <div className="flex-1">
+          <div className="text-sm font-medium text-[var(--tab-text)]">
+            {t('action_create_screenshot')}
+          </div>
+          <div className="text-xs text-[var(--tab-text-muted)] mt-1">
+            {t('action_create_screenshot_desc')}
           </div>
         </div>
       </label>

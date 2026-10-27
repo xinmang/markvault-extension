@@ -34,6 +34,10 @@ export interface BookmarkInput {
   thumbnail?: string;
   favicon?: string;
   createSnapshot?: boolean;
+  /** 保存后生成网站截图（帖子正文的图文卡片） */
+  createScreenshot?: boolean;
+  /** 截图使用的配色，由弹窗按系统主题解析 */
+  screenshotTheme?: 'light' | 'dark';
   is_public?: boolean;
 }
 
@@ -52,5 +56,7 @@ export interface SaveResult {
   };
   offline?: boolean;
   message?: string;
+  /** 书签已保存但截图生成或上传失败时的原因 */
+  screenshotError?: string;
   error?: string;
 }

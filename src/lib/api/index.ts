@@ -8,6 +8,7 @@ import { TagsAPI } from './tags';
 import { UserAPI } from './user';
 import { TabGroupsAPI } from './tab-groups';
 import { SnapshotsAPI } from './snapshots';
+import { ScreenshotsAPI } from './screenshots';
 import type { TMarksClientConfig } from './client';
 
 /**
@@ -20,6 +21,7 @@ export class TMarks {
   public user: UserAPI;
   public tabGroups: TabGroupsAPI;
   public snapshots: SnapshotsAPI;
+  public screenshots: ScreenshotsAPI;
 
   constructor(config: TMarksClientConfig) {
     this.bookmarks = new BookmarksAPI(config);
@@ -27,6 +29,8 @@ export class TMarks {
     this.user = new UserAPI(config);
     this.tabGroups = new TabGroupsAPI(config);
     this.snapshots = new SnapshotsAPI(config);
+    // 截图图片可达数 MB，上传超时放宽到 60 秒
+    this.screenshots = new ScreenshotsAPI({ ...config, requestTimeoutMs: 60_000 });
   }
 
   /**
@@ -52,5 +56,7 @@ export { TagsAPI } from './tags';
 export { UserAPI } from './user';
 export { TabGroupsAPI } from './tab-groups';
 export { SnapshotsAPI } from './snapshots';
+export { ScreenshotsAPI } from './screenshots';
+export type * from './screenshots';
 export type * from './tab-groups';
 export type * from './snapshots';

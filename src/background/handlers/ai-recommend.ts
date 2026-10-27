@@ -7,6 +7,7 @@ import { logger } from '@/lib/utils/logger';
 import type { Message, MessageResponse } from '@/types';
 import { StorageService } from '@/lib/utils/storage';
 import { callAI } from '@/lib/services/ai-client';
+import { getTagConnection } from '@/lib/services/ai-connection';
 import { NEWTAB_FOLDER_PROMPT_TEMPLATE } from '@/lib/constants/newtabPrompts';
 import { buildTypeSafeFolderQuestion } from '@/lib/constants/prompts';
 import { TYPESAFE_CONFIG } from '@/lib/constants/urls';
@@ -89,14 +90,15 @@ export async function handleRecommendNewtabFolder(
           .join(folderPaths.join('\n'))
       : defaultPrompt;
 
-  const apiKey = config.aiConfig.apiKeys[config.aiConfig.provider];
-  if (!apiKey) {
+  const connection = getTagConnection(config);
+  if (!connection) {
     return { success: true, data: { suggestedFolders: [] } };
   }
+  const { apiKey } = connection;
 
   // TypeSafe(jev) 是结构化评估模型，不接受自由文本提示词。
   // 这里把每个候选文件夹路径转成一个 noul 问题，一次请求并发打分，再在代码中取 Top-N。
-  if (config.aiConfig.provider === 'typesafe') {
+  if (connection.provider === 'typesafe') {
     return recommendNewtabFolderWithTypeSafe({
       page,
       url,
@@ -104,16 +106,16 @@ export async function handleRecommendNewtabFolder(
       rootId: folderData.rootId,
       recommendCount,
       apiKey,
-      model: config.aiConfig.model,
-      apiUrl: config.aiConfig.apiUrls?.typesafe,
+      model: connection.model,
+      apiUrl: connection.apiUrl,
     });
   }
 
   const aiResult = await callAI({
-    provider: config.aiConfig.provider as any,
+    provider: connection.provider,
     apiKey,
-    model: config.aiConfig.model,
-    apiUrl: config.aiConfig.apiUrls?.[config.aiConfig.provider],
+    model: connection.model,
+    apiUrl: connection.apiUrl,
     prompt,
   });
 
@@ -125,8 +127,8 @@ export async function handleRecommendNewtabFolder(
     logger.warn(
       '[NewTab Folder Recommend] AI result not parsable or empty suggestedFolders',
       {
-        provider: config.aiConfig.provider,
-        model: config.aiConfig.model,
+        provider: connection.provider,
+        model: connection.model,
         rawPreview: aiContent.trim().slice(0, 1000),
         parsed,
       }

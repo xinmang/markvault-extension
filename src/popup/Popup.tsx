@@ -2,8 +2,10 @@
  * Popup 主组件（协调器）
  */
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useAppStore } from '@/lib/store';
+import { isAIConfigured, isDescriptionAIActive } from '@/lib/services/ai-connection';
+import { resolveScreenshotTheme } from '@/lib/utils/screenshot-prefs';
 import { BookmarkExistsDialog } from '@/components/BookmarkExistsDialog';
 import { ModeSelector } from './ModeSelector';
 import { TabCollectionView } from './TabCollectionView';
@@ -11,6 +13,7 @@ import { NewtabModeView } from './components/NewtabModeView';
 import { BookmarkModeView } from './components/BookmarkModeView';
 import { OnboardingView } from './components/OnboardingView';
 import { NotificationBar } from './components/NotificationBar';
+import { ScreenshotPreview } from './components/ScreenshotPreview';
 import { useNewtabState } from './hooks/useNewtabState';
 import { usePopupState, useTitleSync, useDescriptionSync } from './hooks/usePopupState';
 import { useBookmarkHandlers } from './hooks/useBookmarkHandlers';
@@ -26,13 +29,15 @@ export function Popup() {
     existingBookmark, config, loadConfig, loadExistingTags, extractPageInfo,
     recommendTags, saveBookmark, setError, setSuccessMessage, setLoadingMessage,
     toggleTag, addCustomTag, setCurrentPage, includeThumbnail, setIncludeThumbnail,
-    createSnapshot, setCreateSnapshot, setExistingBookmark,
+    createSnapshot, setCreateSnapshot, createScreenshot, setCreateScreenshot, setExistingBookmark,
+    descriptionStatus, descriptionMessage, generateDescription,
     updateExistingBookmarkTags, updateExistingBookmarkDescription,
-    createSnapshotForBookmark, lastRecommendationSource, lastSaveDurationMs
+    createSnapshotForBookmark, createScreenshotForBookmark, lastRecommendationSource, lastSaveDurationMs
   } = useAppStore();
 
   const newtabState = useNewtabState(setError, setSuccessMessage);
   const popupState = usePopupState();
+  const [showScreenshotPreview, setShowScreenshotPreview] = useState(false);
 
   useTitleSync(currentPage?.title, popupState.setTitleOverride);
   useDescriptionSync(currentPage?.description, popupState.setDescriptionOverride);
@@ -86,7 +91,7 @@ export function Popup() {
 
   const isConfigured = Boolean(config && config.bookmarkSite.apiKey);
   const isAIEnabled = Boolean(
-    config && config.preferences.enableAI && config.aiConfig.apiKeys[config.aiConfig.provider]
+    config && config.preferences.enableAI && isAIConfigured(config)
   );
 
   // Initialize bookmark mode
@@ -96,8 +101,11 @@ export function Popup() {
       if (!isConfigured) { popupState.setInitialized(true); return; }
       try {
         await extractPageInfo();
-        const shouldUseAI = config.preferences.enableAI && Boolean(config.aiConfig.apiKeys[config.aiConfig.provider]);
-        if (shouldUseAI) await recommendTags();
+        // 标签分类与描述生成使用不同模型，并行请求
+        const tasks: Promise<void>[] = [];
+        if (config.preferences.enableAI && isAIConfigured(config)) tasks.push(recommendTags());
+        if (isDescriptionAIActive(config)) tasks.push(generateDescription());
+        await Promise.all(tasks);
         popupState.setInitialized(true);
       } catch (err) {
         setError(err instanceof Error ? err.message : t('error_init_failed'));
@@ -115,7 +123,7 @@ export function Popup() {
         await extractPageInfo();
         await newtabState.loadNewtabFolders();
         
-        const shouldUseAI = config.preferences.enableNewtabAI && Boolean(config.aiConfig.apiKeys[config.aiConfig.provider]);
+        const shouldUseAI = config.preferences.enableNewtabAI && isAIConfigured(config);
         if (shouldUseAI) {
           const page = useAppStore.getState().currentPage;
           if (page) {
@@ -238,7 +246,7 @@ export function Popup() {
               newtabFolders={newtabState.newtabFolders}
               currentNewtabFolderId={newtabState.currentNewtabFolderId}
               newtabRootId={newtabState.newtabRootId}
-              isAIEnabled={Boolean(config && config.preferences.enableNewtabAI && config.aiConfig.apiKeys[config.aiConfig.provider])}
+              isAIEnabled={Boolean(config && config.preferences.enableNewtabAI && isAIConfigured(config))}
               isRecommending={newtabState.isNewtabRecommending}
             />
           )}
@@ -255,6 +263,9 @@ export function Popup() {
               isLoading={isLoading}
               includeThumbnail={includeThumbnail}
               createSnapshot={createSnapshot}
+              createScreenshot={createScreenshot}
+              descriptionStatus={descriptionStatus}
+              descriptionMessage={descriptionMessage}
               showTitleEdit={popupState.showTitleEdit}
               showDescEdit={popupState.showDescEdit}
               titleOverride={popupState.titleOverride}
@@ -266,6 +277,9 @@ export function Popup() {
               onSetDescriptionOverride={popupState.setDescriptionOverride}
               onToggleThumbnail={bookmarkHandlers.handleToggleThumbnail}
               onToggleSnapshot={bookmarkHandlers.handleToggleSnapshot}
+              onToggleScreenshot={() => setCreateScreenshot(!createScreenshot)}
+              onPreviewScreenshot={() => setShowScreenshotPreview(true)}
+              onRegenerateDescription={() => void generateDescription()}
               onToggleTitleEdit={() => popupState.setShowTitleEdit(!popupState.showTitleEdit)}
               onToggleDescEdit={() => popupState.setShowDescEdit(!popupState.showDescEdit)}
               onApplyTitle={bookmarkHandlers.handleApplyTitleOverride}
@@ -287,6 +301,14 @@ export function Popup() {
         )}
       </div>
 
+      {showScreenshotPreview && currentPage && (
+        <ScreenshotPreview
+          theme={resolveScreenshotTheme(config?.preferences?.screenshotTheme)}
+          pageUrl={currentPage.url}
+          onClose={() => setShowScreenshotPreview(false)}
+        />
+      )}
+
       {/* Bookmark Exists Dialog */}
       {existingBookmark && existingBookmark.needsDialog && (
         <BookmarkExistsDialog
@@ -295,6 +317,7 @@ export function Popup() {
           onUpdateTags={async (tags) => { if (existingBookmark.id) await updateExistingBookmarkTags(existingBookmark.id, tags); }}
           onUpdateDescription={async (description) => { if (existingBookmark.id) await updateExistingBookmarkDescription(existingBookmark.id, description); }}
           onCreateSnapshot={async () => { if (existingBookmark.id) await createSnapshotForBookmark(existingBookmark.id); }}
+          onCreateScreenshot={async () => { if (existingBookmark.id) await createScreenshotForBookmark(existingBookmark.id); }}
           onCancel={() => setExistingBookmark(null)}
         />
       )}

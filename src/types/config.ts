@@ -1,4 +1,4 @@
-import type { AIConfig, AIProvider } from './ai';
+import type { AIConfig, AIProvider, AIServiceConnection } from './ai';
 
 // ============ Configuration Models ============
 
@@ -27,6 +27,14 @@ export interface UserPreferences {
 
   enableNewtabFolderPrompt?: boolean;
   newtabFolderPrompt?: string;
+
+  // 用描述模型为新书签生成中文描述（默认开启，需配置可生成文字的模型）
+  enableAIDescription?: boolean;
+
+  // 网站截图：保存书签时默认生成截图，以及默认开启截图的网站（域名，含子域名）
+  defaultCreateScreenshot?: boolean;
+  screenshotDomains?: string[];
+  screenshotTheme?: 'light' | 'dark' | 'auto';
 }
 
 export interface StorageConfig {
@@ -35,4 +43,4 @@ export interface StorageConfig {
   preferences: UserPreferences;
 }
 
-export type { AIConfig, AIProvider };
+export type { AIConfig, AIProvider, AIServiceConnection };
