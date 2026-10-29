@@ -112,14 +112,14 @@ release/               ZIP 和校验和（构建生成）
 
 1. 同步修改 `package.json` 和 `manifest.json` 的版本，运行 `pnpm install --lockfile-only` 更新锁文件，并执行类型检查、构建和依赖审计。
 2. 用构建后的 `dist/` 验证安装、保存书签、AI 配置、标签页组、快照和同步，提交源码及锁文件。
-3. 推送与版本一致的标签，例如两个文件都为 `1.0.1000` 时：
+3. 推送与版本一致的标签，例如两个文件都为 `0.0.1` 时：
 
    ```bash
-   git tag v1.0.1000
-   git push origin v1.0.1000
+   git tag v0.0.1
+   git push origin v0.0.1
    ```
 
-   版本号格式为 `x.y.NNNN`：末位是不少于 4 位、不以 0 开头、只增不减的构建号。
+   版本号从 `0.0.1` 起步，按末位递增（`0.0.2`、`0.0.3`…）。每段必须是 0–65535 的整数且不能有前导零，这是浏览器对 `manifest.version` 的硬性要求。
 
 4. 确认工作流成功，并检查 Release 中存在 `markvault-extension-chrome.zip` 和 `checksums.sha256`。仓库与 Release 需要允许目标用户访问。
 
