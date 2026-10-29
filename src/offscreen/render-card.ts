@@ -19,6 +19,8 @@ import { buildCardStyles } from './card-styles';
 
 /** 单张图片抓取超时 */
 const IMAGE_TIMEOUT_MS = 10_000;
+/** 卡片内单张图片等待加载的上限（图片已是 data URL，正常几毫秒内完成） */
+const IMAGE_LOAD_TIMEOUT_MS = 3_000;
 /** 单张图片体积上限 */
 const MAX_IMAGE_BYTES = 6 * 1024 * 1024;
 /** canvas 单边上限 */
@@ -490,24 +492,33 @@ function cleanupCard(built: BuiltCard | null): void {
   built.style.remove();
 }
 
-function waitForImages(root: HTMLElement): Promise<void> {
+/**
+ * 等待卡片中的图片加载完成，以便测量真实高度。
+ *
+ * 不能用 img.decode()：离屏文档从不绘制，decode() 和 requestAnimationFrame 一样永远不会完成，
+ * 渲染会一直挂起到后台超时。图片都是 data URL，load / error 事件足够，另设超时兜底。
+ */
+export function waitForImages(root: HTMLElement, timeoutMs = IMAGE_LOAD_TIMEOUT_MS): Promise<void> {
   const images = Array.from(root.querySelectorAll('img'));
   return Promise.all(
-    images.map(async (img) => {
-      if (typeof img.decode === 'function') {
-        try {
-          await img.decode();
-          return;
-        } catch {
-          return;
-        }
-      }
-      if (img.complete) return;
-      await new Promise<void>((resolve) => {
-        img.addEventListener('load', () => resolve(), { once: true });
-        img.addEventListener('error', () => resolve(), { once: true });
-      });
-    })
+    images.map(
+      (img) =>
+        new Promise<void>((resolve) => {
+          if (img.complete) {
+            resolve();
+            return;
+          }
+          const finish = () => {
+            clearTimeout(timer);
+            img.removeEventListener('load', finish);
+            img.removeEventListener('error', finish);
+            resolve();
+          };
+          const timer = setTimeout(finish, timeoutMs);
+          img.addEventListener('load', finish);
+          img.addEventListener('error', finish);
+        })
+    )
   ).then(() => undefined);
 }
 

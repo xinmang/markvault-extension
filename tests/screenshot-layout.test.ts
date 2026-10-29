@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { truncateBlocks, formatPublishedAt, formatSourceUrl } from '@/offscreen/render-card';
+import { describe, expect, it, vi } from 'vitest';
+import { truncateBlocks, formatPublishedAt, formatSourceUrl, waitForImages } from '@/offscreen/render-card';
 import { upgradeXImageUrl, upgradeXAvatarUrl } from '@/content/screenshot/x';
 import { upgradeDiscourseAvatarUrl, parseDiscoursePostNumber } from '@/content/screenshot/discourse';
 import type { ScreenshotBlock } from '@/types/screenshot';
@@ -134,5 +134,45 @@ describe('URL 升级 helper', () => {
     expect(parseDiscoursePostNumber('https://linux.do/t/slug/123')).toBe(1);
     expect(parseDiscoursePostNumber('https://linux.do/t/slug/123/2')).toBe(2);
     expect(parseDiscoursePostNumber('https://linux.do/t/slug/123/42')).toBe(42);
+  });
+});
+
+describe('waitForImages', () => {
+  // 离屏文档从不绘制，img.decode() 永远不会完成；等待必须只依赖 load / error 与超时
+  const pendingImage = () => {
+    const img = document.createElement('img');
+    Object.defineProperty(img, 'complete', { value: false });
+    img.decode = () => new Promise<void>(() => {});
+    return img;
+  };
+
+  it('decode() 不会完成时按 load 事件结束等待', async () => {
+    const root = document.createElement('div');
+    const img = pendingImage();
+    root.appendChild(img);
+
+    const waiting = waitForImages(root, 60_000);
+    img.dispatchEvent(new Event('load'));
+    await expect(waiting).resolves.toBeUndefined();
+  });
+
+  it('图片既不加载也不报错时按超时结束', async () => {
+    vi.useFakeTimers();
+    try {
+      const root = document.createElement('div');
+      root.append(pendingImage(), pendingImage());
+
+      let settled = false;
+      const waiting = waitForImages(root, 3000).then(() => {
+        settled = true;
+      });
+      await vi.advanceTimersByTimeAsync(2999);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await waiting;
+      expect(settled).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

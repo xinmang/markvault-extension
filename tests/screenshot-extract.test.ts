@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { extractScreenshotContent } from '@/content/screenshot';
+import { dropTitleHeading } from '@/content/screenshot/generic';
 import type { ScreenshotBlock } from '@/types/screenshot';
 
 function docFrom(html: string): Document {
@@ -312,5 +313,42 @@ describe('通用网页提取', () => {
   it('几乎空白页面返回 null', () => {
     const doc = docFrom('<html><body><div>短</div></body></html>');
     expect(extractScreenshotContent(doc, 'https://example.com/empty')).toBeNull();
+  });
+
+  it('正文中与卡片标题相同的文章大标题只保留一处', () => {
+    const doc = docFrom(`
+      <html><head><title>自托管实践 - Example Blog</title></head><body>
+        <article>
+          <h1>自托管实践</h1>
+          <p>正文第一段，长度足够让提取器认为这是一篇有效的文章内容。</p>
+          <h2>为什么要自托管</h2>
+          <p>第二段正文。</p>
+        </article>
+      </body></html>
+    `);
+    const content = extractScreenshotContent(doc, 'https://example.com/self-hosting');
+    expect(content?.title).toBe('自托管实践');
+    const headings = content?.blocks.filter((block) => block.type === 'heading').map(textOfBlock);
+    expect(headings).toEqual(['为什么要自托管']);
+  });
+});
+
+describe('dropTitleHeading', () => {
+  const heading = (text: string): ScreenshotBlock => ({ type: 'heading', level: 2, text });
+  const paragraph = (text: string): ScreenshotBlock => ({ type: 'paragraph', inlines: [{ type: 'text', text }] });
+
+  it('匹配“标题 - 站点名”形式的页面标题', () => {
+    const blocks = [heading('Rust 1.90 发布'), paragraph('正文')];
+    expect(dropTitleHeading(blocks, 'Rust 1.90 发布 | Rust Blog')).toEqual([paragraph('正文')]);
+  });
+
+  it('标题只是前缀相同的不同小节时保留', () => {
+    const blocks = [heading('Rust'), paragraph('正文')];
+    expect(dropTitleHeading(blocks, 'Rust 1.90 发布')).toEqual(blocks);
+  });
+
+  it('只剩标题一块时不删除，避免卡片正文为空', () => {
+    const blocks = [heading('只有标题')];
+    expect(dropTitleHeading(blocks, '只有标题')).toEqual(blocks);
   });
 });

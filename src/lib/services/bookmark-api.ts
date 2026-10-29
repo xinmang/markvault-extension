@@ -242,16 +242,24 @@ export class BookmarkAPIClient {
         );
       }
 
-      // Check if this is an existing bookmark
-      const isExisting = response.meta?.code === 'BOOKMARK_EXISTS';
+      // MarkVault 对已收藏的网址返回 already_exists 且不修改原书签（旧版接口用 meta.code 表示），
+      // 交给“书签已存在”对话框让用户选择更新标签、描述或补充快照与截图
+      const isExisting = response.data.already_exists === true || response.meta?.code === 'BOOKMARK_EXISTS';
       if (isExisting) {
-        logger.log('[BookmarkAPI] 书签已存在:', response.data.bookmark.id);
+        const existing = response.data.bookmark;
+        logger.log('[BookmarkAPI] 书签已存在:', existing.id);
         await this.notifyWebAppDataChanged();
         // Return the full bookmark data for the dialog
-        return { 
-          id: response.data.bookmark.id,
+        return {
+          id: existing.id,
           isExisting,
-          existingBookmark: response.data.bookmark
+          // 缺少 bookmarks.read 权限时只返回 id，补齐对话框需要的字段
+          existingBookmark: {
+            ...existing,
+            title: existing.title || bookmark.title,
+            url: existing.url || bookmark.url,
+            tags: Array.isArray(existing.tags) ? existing.tags : [],
+          }
         };
       } else {
         logger.log('[BookmarkAPI] 书签创建成功:', response.data.bookmark.id);

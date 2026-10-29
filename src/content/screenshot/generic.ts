@@ -227,6 +227,20 @@ function metaContent(doc: Document, selector: string): string {
   return collapseWhitespace(el?.getAttribute('content') || '');
 }
 
+/**
+ * 卡片顶部已显示标题，正文里与之相同的文章大标题（通常是 h1）只保留一处。
+ * 也匹配“标题 - 站点名”这类带后缀的页面标题。
+ */
+export function dropTitleHeading(blocks: ScreenshotBlock[], title: string | undefined): ScreenshotBlock[] {
+  if (!title || blocks.length <= 1) return blocks;
+  const index = blocks.findIndex((block) => block.type === 'heading');
+  if (index < 0) return blocks;
+  const heading = (blocks[index] as Extract<ScreenshotBlock, { type: 'heading' }>).text;
+  const rest = title.startsWith(heading) ? title.slice(heading.length) : null;
+  if (rest === null || (rest !== '' && !/^\s*[-|–—_·:：]/.test(rest))) return blocks;
+  return [...blocks.slice(0, index), ...blocks.slice(index + 1)];
+}
+
 function authorName(doc: Document): string {
   const fromMeta = metaContent(doc, 'meta[name="author"]');
   if (fromMeta) return fromMeta;
@@ -307,6 +321,6 @@ export function extractGenericPage(doc: Document, url: string): ScreenshotConten
     author: name ? { name } : undefined,
     publishedAt: publishedAt || undefined,
     faviconUrl,
-    blocks: dedupeImageBlocks(blocks),
+    blocks: dedupeImageBlocks(dropTitleHeading(blocks, title)),
   };
 }

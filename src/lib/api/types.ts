@@ -121,6 +121,10 @@ export interface GetBookmarksResponse {
 export interface CreateBookmarkResponse {
   data: {
     bookmark: TMarksBookmark;
+    /** MarkVault：网址已存在时为 true，原书签保持不变 */
+    already_exists?: boolean;
+    /** MarkVault：从回收站恢复了同一网址的书签 */
+    restored?: boolean;
   };
   meta?: {
     message?: string;

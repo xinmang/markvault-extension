@@ -1,6 +1,6 @@
 {
   "name": "markvault-extension",
-  "version": "1.0.1000",
+  "version": "1.0.1001",
   "description": "MarkVault 智能书签管理浏览器扩展 - 支持 AI 标签推荐、标签页组管理和 Chromium 浏览器",
   "main": "index.js",
   "scripts": {

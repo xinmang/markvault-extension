@@ -241,6 +241,11 @@ chrome.runtime.onMessage.addListener(
     sender: chrome.runtime.MessageSender,
     sendResponse: (response: MessageResponse) => void
   ) => {
+    // 发给离屏文档的消息由离屏页面应答；后台若回复“未知消息”会抢在渲染结果之前
+    if ((message as { target?: unknown })?.target === 'offscreen') {
+      return false;
+    }
+
     try {
       logger.log('[BG] onMessage', {
         runtimeId: chrome.runtime.id,

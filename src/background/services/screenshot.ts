@@ -6,7 +6,8 @@ import type { ScreenshotContent, ScreenshotRenderOptions, ScreenshotRenderResult
 
 const OFFSCREEN_PATH = 'src/offscreen/index.html';
 const EXTRACT_TIMEOUT_MS = 8000;
-const RENDER_TIMEOUT_MS = 60000;
+// 图片抓取单张 10 秒、并行进行，渲染本身不到一秒；超过 30 秒说明离屏渲染已卡住
+const RENDER_TIMEOUT_MS = 30000;
 
 /** 页面上没有可截图正文时的错误码，弹窗据此显示专门的提示 */
 export const SCREENSHOT_NO_CONTENT = 'NO_CONTENT';
