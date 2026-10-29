@@ -46,7 +46,7 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "dexie": "^4.4.6",
-    "dompurify": "^3.4.16",
+    "dompurify": "^3.4.17",
     "lucide-react": "^0.554.0",
     "lunar-javascript": "^1.7.7",
     "openai": "^6.49.0",
