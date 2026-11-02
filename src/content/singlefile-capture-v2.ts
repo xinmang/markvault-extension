@@ -138,6 +138,9 @@ async function extractImages(
       const blob = await readResource(url, deadline, (response) => response.blob())
       if (!blob || blob.size > maxSize) return null
       const hash = await simpleHash(blob)
+      imageMap.set(url, hash)
+      // 不同地址可能返回同一张图（懒加载占位图、srcset 多尺寸），按内容只上传一次。
+      if (images.some((image) => image.hash === hash)) return hash
       
       images.push({
         originalUrl: url,
@@ -145,8 +148,6 @@ async function extractImages(
         hash: hash,
         element: null as any,
       })
-      
-      imageMap.set(url, hash)
       return hash
     } catch (error) {
       return null

@@ -73,6 +73,15 @@ describe('快照资源预算', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it('不同地址返回同一张图片时只上传一份，页面引用指向同一标识', async () => {
+    document.body.innerHTML = '<img src="https://example.com/a.png"><img src="https://example.com/b.png">';
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, blob: async () => new Blob(['same-image'], { type: 'image/png' }) }));
+    const result = await capturePageV2({});
+    expect(result.images).toHaveLength(1);
+    const hash = result.images[0].hash;
+    expect(result.html.match(new RegExp(`/api/snapshot-images/${hash}`, 'g'))).toHaveLength(2);
+  });
+
   it('超过图片大小限制时保留原地址和 HTML', async () => {
     document.body.innerHTML = '<p>正文</p><img src="https://example.com/large.png">';
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, blob: async () => new Blob(['large-image']) }));
