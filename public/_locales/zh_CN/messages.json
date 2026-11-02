@@ -828,6 +828,7 @@
   "popup_screenshot_close": { "message": "关闭预览", "description": "popup_screenshot_close" },
   "msg_screenshot_uploaded": { "message": "截图已保存到 MarkVault", "description": "msg_screenshot_uploaded" },
   "error_screenshot_upload": { "message": "截图上传失败：$msg$", "description": "error_screenshot_upload", "placeholders": { "msg": { "content": "$1" } } },
+  "error_snapshot_upload": { "message": "书签已保存，快照未能保存：$msg$", "description": "快照捕获或上传失败提示", "placeholders": { "msg": { "content": "$1" } } },
   "options_header_title": { "message": "MarkVault 扩展设置", "description": "options_header_title" },
   "options_nav_aria": { "message": "设置分区", "description": "options_nav_aria" },
   "options_nav_group_start": { "message": "开始", "description": "options_nav_group_start" },

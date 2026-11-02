@@ -3,6 +3,40 @@
  * 使用 SingleFile 捕获完整网页内容（包含内联资源）
  */
 
+import { withCaptureTimeout } from '@/background/services/page-capture';
+
+export interface CapturedPageSnapshot {
+  html: string;
+  images: Array<{ hash: string; data: string; type: string; size: number }>;
+}
+
+/** 两项媒体捕获使用调用方锁定的同一个主框架，资源抓取共享 25 秒预算。 */
+export async function capturePageSnapshotV2(tabId: number): Promise<CapturedPageSnapshot> {
+  const response = await withCaptureTimeout(
+    chrome.tabs.sendMessage(tabId, {
+      type: 'CAPTURE_PAGE_V2',
+      options: {
+        inlineCSS: true,
+        extractImages: true,
+        inlineFonts: false,
+        removeScripts: true,
+        removeHiddenElements: false,
+        maxImageSize: 100 * 1024 * 1024,
+        timeout: 25000,
+      },
+    }, { frameId: 0 }) as Promise<{
+      success: boolean;
+      error?: string;
+      data?: CapturedPageSnapshot;
+    }>,
+    35000,
+  );
+  if (!response?.success || !response.data?.html) {
+    throw new Error(response?.error || '网页快照捕获失败');
+  }
+  return response.data;
+}
+
 export interface SnapshotOptions {
   inlineCSS?: boolean
   inlineImages?: boolean

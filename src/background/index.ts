@@ -10,13 +10,14 @@ import { bookmarkService } from '@/lib/services/bookmark-service';
 import { bookmarkAPI } from '@/lib/services/bookmark-api';
 import { syncPendingTabGroups } from '@/lib/services/tab-collection';
 import { StorageService } from '@/lib/utils/storage';
-import { TIMEOUTS } from '@/lib/constants/timeouts';
 import type { Message, MessageResponse, PageInfo } from '@/types';
 import type { BookmarkInput } from '@/types/bookmark';
 import { logger } from '@/lib/utils/logger';
 import { isDescriptionAIActive } from '@/lib/services/ai-connection';
 import { generateDescription } from '@/lib/services/description-generator';
 import { captureScreenshot, getActiveTabId } from './services/screenshot';
+import { prepareCaptureTab } from './services/page-capture';
+import { capturePageSnapshotV2 } from '@/lib/services/snapshot-service';
 
 import {
   ensureNewtabWorkspaceFolders,
@@ -400,49 +401,8 @@ async function handleMessage(
 
     case 'CREATE_SNAPSHOT': {
       const payload = message.payload as { bookmarkId: string; title: string; url: string };
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (!tab || !tab.id) {
-        throw new Error('No active tab found');
-      }
-
-      const capturePromise = chrome.tabs.sendMessage(tab.id, {
-        type: 'CAPTURE_PAGE_V2',
-        options: {
-          inlineCSS: true,
-          extractImages: true,
-          inlineFonts: false,
-          removeScripts: true,
-          removeHiddenElements: false,
-          maxImageSize: 100 * 1024 * 1024,
-          timeout: 30000,
-        },
-      });
-
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Capture timeout')), TIMEOUTS.AI_RECOMMEND);
-      });
-
-      interface CaptureResponse {
-        success: boolean;
-        error?: string;
-        data?: {
-          html: string;
-          images: Array<{
-            hash: string;
-            data: string;
-            type: string;
-            size: number;
-          }>;
-        };
-      }
-
-      const response = (await Promise.race([capturePromise, timeoutPromise])) as CaptureResponse;
-
-      if (!response.success) {
-        throw new Error(response.error || 'Capture failed');
-      }
-
-      const captureResult = response.data!;
+      const tabId = await getActiveTabId().then(prepareCaptureTab);
+      const captureResult = await capturePageSnapshotV2(tabId);
       const images = captureResult.images.map((img) => ({
         hash: img.hash,
         data: img.data,

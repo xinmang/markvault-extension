@@ -2,10 +2,20 @@ import { db } from '@/lib/db';
 import { t } from '@/lib/i18n';
 import { bookmarkAPI } from './bookmark-api';
 import { tagRecommender } from './tag-recommender';
-import { TIMEOUTS } from '@/lib/constants/timeouts';
 import type { BookmarkInput, SaveResult } from '@/types';
 import { logger } from '@/lib/utils/logger';
 import { captureScreenshot, getActiveTabId, type CapturedScreenshot } from '@/background/services/screenshot';
+import { prepareCaptureTab } from '@/background/services/page-capture';
+import { capturePageSnapshotV2, type CapturedPageSnapshot } from './snapshot-service';
+
+type CaptureResult<T> = { ok: true; value: T } | { ok: false; error: string };
+
+function settleCapture<T>(task: Promise<T>): Promise<CaptureResult<T>> {
+  return task.then(
+    (value) => ({ ok: true as const, value }),
+    (error: unknown) => ({ ok: false as const, error: error instanceof Error ? error.message : String(error) }),
+  );
+}
 
 export class BookmarkService {
   /**
@@ -15,15 +25,17 @@ export class BookmarkService {
     let bookmarkId: string | undefined;
     let isExisting = false;
 
-    // 截图的提取与渲染不依赖书签 ID，与保存请求并行进行；结果不会抛出未处理的异常
-    const screenshotTask: Promise<{ ok: true; value: CapturedScreenshot } | { ok: false; error: string }> | null =
-      bookmark.createScreenshot
-        ? getActiveTabId()
-            .then((tabId) => captureScreenshot(tabId, { theme: bookmark.screenshotTheme ?? 'light' }))
-            .then(
-              (value) => ({ ok: true as const, value }),
-              (error: unknown) => ({ ok: false as const, error: error instanceof Error ? error.message : String(error) })
-            )
+    // 在离屏文档创建前锁定来源标签页，截图和快照共用准备过程，并独立完成捕获。
+    const sourceTabTask = bookmark.createScreenshot || bookmark.createSnapshot
+      ? getActiveTabId().then(prepareCaptureTab)
+      : null;
+    const snapshotTask: Promise<CaptureResult<CapturedPageSnapshot>> | null =
+      bookmark.createSnapshot && sourceTabTask
+        ? settleCapture(sourceTabTask.then(capturePageSnapshotV2))
+        : null;
+    const screenshotTask: Promise<CaptureResult<CapturedScreenshot>> | null =
+      bookmark.createScreenshot && sourceTabTask
+        ? settleCapture(sourceTabTask.then((tabId) => captureScreenshot(tabId, { theme: bookmark.screenshotTheme ?? 'light' })))
         : null;
 
     logger.log('[BookmarkService] saveBookmark 开始:', {
@@ -131,74 +143,26 @@ export class BookmarkService {
       throw error;
     }
 
-    // 5. Create snapshot if requested (works for both new and existing bookmarks)
-    if (bookmark.createSnapshot && bookmarkId) {
-      try {
-        // Get the current tab
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        if (tab && tab.id) {
-          // Capture page using V2 method (separate images)
-          let captureResult: { html: string; images: any[] };
-          try {
-            const capturePromise = chrome.tabs.sendMessage(tab.id, {
-              type: 'CAPTURE_PAGE_V2',
-              options: {
-                inlineCSS: true,
-                extractImages: true,
-                inlineFonts: false,
-                removeScripts: true,
-                removeHiddenElements: false,
-                maxImageSize: 100 * 1024 * 1024, // 提高到 100MB
-                timeout: 30000
-              }
-            });
-            
-            const timeoutPromise = new Promise((_, reject) => {
-              setTimeout(() => reject(new Error('Capture timeout')), TIMEOUTS.AI_RECOMMEND);
-            });
-            
-            interface CaptureResponse {
-              success: boolean;
-              error?: string;
-              data?: {
-                html: string;
-                images: Array<{
-                  hash: string;
-                  data: string;
-                  type: string;
-                  size: number;
-                }>;
-              };
-            }
-            
-            const response = await Promise.race([capturePromise, timeoutPromise]) as CaptureResponse;
-            
-            if (response.success && response.data) {
-              captureResult = response.data;
-            } else {
-              throw new Error(response.error || 'Capture failed');
-            }
-          } catch (error) {
-            throw error;
-          }
-          
-          // Prepare images for upload
-          const images = captureResult.images.map((img: any) => ({
-            hash: img.hash,
-            data: img.data, // base64
-            type: img.type,
-          }));
-
-          // Create snapshot via V2 API
+    // 捕获互不依赖；其中一项失败时仍上传另一项，并把失败原因交给弹窗。
+    let snapshotError: string | undefined;
+    if (snapshotTask && bookmarkId) {
+      const captured = await snapshotTask;
+      if (captured.ok) {
+        try {
           await bookmarkAPI.createSnapshotV2(bookmarkId, {
-            html_content: captureResult.html,
+            html_content: captured.value.html,
             title: bookmark.title,
             url: bookmark.url,
-            images,
+            images: captured.value.images.map(({ hash, data, type }) => ({ hash, data, type })),
           });
+        } catch (error) {
+          snapshotError = error instanceof Error ? error.message : String(error);
         }
-      } catch (snapshotError) {
-        // Don't fail the whole operation if snapshot creation fails
+      } else {
+        snapshotError = captured.error;
+      }
+      if (snapshotError) {
+        logger.warn('[BookmarkService] 快照未能保存:', snapshotError);
       }
     }
 
@@ -230,7 +194,8 @@ export class BookmarkService {
       success: true,
       bookmarkId: bookmarkId,
       message: isExisting ? t('msg_bookmark_exists_snapshot') : undefined,
-      screenshotError
+      screenshotError,
+      snapshotError,
     };
   }
 

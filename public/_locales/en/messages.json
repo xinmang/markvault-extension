@@ -1176,6 +1176,7 @@
   "popup_screenshot_close": { "message": "Close preview", "description": "popup_screenshot_close" },
   "msg_screenshot_uploaded": { "message": "Screenshot saved to MarkVault", "description": "msg_screenshot_uploaded" },
   "error_screenshot_upload": { "message": "Screenshot upload failed: $msg$", "description": "error_screenshot_upload", "placeholders": { "msg": { "content": "$1" } } },
+  "error_snapshot_upload": { "message": "Bookmark saved, but snapshot could not be saved: $msg$", "description": "快照捕获或上传失败提示", "placeholders": { "msg": { "content": "$1" } } },
   "options_header_title": { "message": "MarkVault extension settings", "description": "options_header_title" },
   "options_nav_aria": { "message": "Settings sections", "description": "options_nav_aria" },
   "options_nav_group_start": { "message": "Start", "description": "options_nav_group_start" },

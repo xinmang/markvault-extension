@@ -106,10 +106,13 @@ export const createBookmarkActions = (set: any, get: any): BookmarkActions => ({
           isLoading: false,
           isSaving: false,
           lastSaveDurationMs: elapsedMs,
-          // 书签已保存，截图失败只作为提示，不影响保存结果
-          error: saveResult?.screenshotError
-            ? t('error_screenshot_upload', saveResult.screenshotError === 'NO_CONTENT' ? t('popup_screenshot_no_content') : saveResult.screenshotError)
-            : null
+          // 书签已保存，分别提示两种媒体的失败原因。
+          error: [
+            saveResult?.snapshotError ? t('error_snapshot_upload', saveResult.snapshotError) : null,
+            saveResult?.screenshotError
+              ? t('error_screenshot_upload', saveResult.screenshotError === 'NO_CONTENT' ? t('popup_screenshot_no_content') : saveResult.screenshotError)
+              : null,
+          ].filter(Boolean).join('；') || null
         });
 
         chrome.notifications.create({

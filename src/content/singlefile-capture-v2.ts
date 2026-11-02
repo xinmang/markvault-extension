@@ -50,6 +50,8 @@ async function simpleHash(blob: Blob): Promise<string> {
  */
 export async function capturePageV2(options: Partial<CaptureOptions> = {}): Promise<CaptureResult> {
   const finalOptions = { ...DEFAULT_OPTIONS, ...options }
+  // CSS 和图片共享一个截止时间，避免各自耗时 30 秒后超过外层捕获超时。
+  const deadline = Date.now() + finalOptions.timeout!
   
   try {
     // 克隆文档
@@ -59,18 +61,18 @@ export async function capturePageV2(options: Partial<CaptureOptions> = {}): Prom
     
     // 1. 内联 CSS
     if (finalOptions.inlineCSS) {
-      await inlineStylesheets(doc, finalOptions.timeout!)
+      await inlineStylesheets(doc, deadline)
     }
     
     // 2. 提取图片（不内联）
     if (finalOptions.extractImages) {
-      const extractedImages = await extractImages(doc, finalOptions.maxImageSize!, finalOptions.timeout!)
+      const extractedImages = await extractImages(doc, finalOptions.maxImageSize!, deadline)
       images.push(...extractedImages)
     }
     
     // 3. 内联字体（可选）
     if (finalOptions.inlineFonts) {
-      await inlineFonts(doc, finalOptions.timeout!)
+      await inlineFonts(doc, Math.max(0, deadline - Date.now()))
     }
     
     // 4. 移除脚本
@@ -98,18 +100,34 @@ export async function capturePageV2(options: Partial<CaptureOptions> = {}): Prom
  * 提取所有图片（不内联到HTML）
  * 支持：img src, img srcset, picture source, video poster, CSS background-image
  */
+/** 单个慢资源最多等待 5 秒，耗尽预算时保留原地址，不阻止 HTML 快照保存。 */
+async function readResource<T>(url: string, deadline: number, read: (response: Response) => Promise<T>): Promise<T | null> {
+  const remaining = deadline - Date.now()
+  if (remaining <= 0) return null
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), Math.min(5000, remaining))
+  try {
+    const response = await fetch(url, { signal: controller.signal })
+    return response.ok ? await read(response) : null
+  } catch {
+    return null
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 async function extractImages(
   doc: Document,
-  _maxSize: number,
-  timeout: number
+  maxSize: number,
+  deadline: number
 ): Promise<ImageData[]> {
-  const startTime = Date.now()
   const images: ImageData[] = []
   const imageMap = new Map<string, string>() // originalUrl -> hash
   
   // 辅助函数：处理单个图片 URL
   const processImageUrl = async (url: string): Promise<string | null> => {
     if (!url || url.startsWith('data:')) return null
+    if (Date.now() >= deadline) return null
     
     // 检查是否已经处理过
     if (imageMap.has(url)) {
@@ -117,10 +135,8 @@ async function extractImages(
     }
     
     try {
-      const response = await fetch(url)
-      if (!response.ok) return null
-      
-      const blob = await response.blob()
+      const blob = await readResource(url, deadline, (response) => response.blob())
+      if (!blob || blob.size > maxSize) return null
       const hash = await simpleHash(blob)
       
       images.push({
@@ -141,7 +157,7 @@ async function extractImages(
   const imgElements = Array.from(doc.querySelectorAll('img[src]'))
   
   for (const img of imgElements) {
-    if (Date.now() - startTime > timeout) break
+    if (Date.now() >= deadline) break
     
     const src = (img as HTMLImageElement).src
     const hash = await processImageUrl(src)
@@ -155,7 +171,7 @@ async function extractImages(
   const imgWithSrcset = Array.from(doc.querySelectorAll('img[srcset]'))
   
   for (const img of imgWithSrcset) {
-    if (Date.now() - startTime > timeout) break
+    if (Date.now() >= deadline) break
     
     const srcset = (img as HTMLImageElement).srcset
     if (!srcset) continue
@@ -183,7 +199,7 @@ async function extractImages(
   const sourceElements = Array.from(doc.querySelectorAll('picture source[srcset]'))
   
   for (const source of sourceElements) {
-    if (Date.now() - startTime > timeout) break
+    if (Date.now() >= deadline) break
     
     const srcset = (source as HTMLSourceElement).srcset
     if (!srcset) continue
@@ -210,7 +226,7 @@ async function extractImages(
   const videoElements = Array.from(doc.querySelectorAll('video[poster]'))
   
   for (const video of videoElements) {
-    if (Date.now() - startTime > timeout) break
+    if (Date.now() >= deadline) break
     
     const poster = (video as HTMLVideoElement).poster
     const hash = await processImageUrl(poster)
@@ -223,7 +239,7 @@ async function extractImages(
   const elementsWithStyle = Array.from(doc.querySelectorAll('[style*="background"]'))
   
   for (const element of elementsWithStyle) {
-    if (Date.now() - startTime > timeout) break
+    if (Date.now() >= deadline) break
     
     const style = (element as HTMLElement).style.cssText
     if (!style) continue
@@ -260,12 +276,11 @@ async function extractImages(
  * 注意：CSS 中的图片 URL 会被转换为绝对 URL，但不会被提取
  * 因为 CSS 中的图片通常是装饰性的，而且可能很多
  */
-async function inlineStylesheets(doc: Document, timeout: number): Promise<void> {
+async function inlineStylesheets(doc: Document, deadline: number): Promise<void> {
   const links = Array.from(doc.querySelectorAll('link[rel="stylesheet"]'))
-  const startTime = Date.now()
   
   for (const link of links) {
-    if (Date.now() - startTime > timeout) {
+    if (Date.now() >= deadline) {
       break
     }
     
@@ -273,10 +288,8 @@ async function inlineStylesheets(doc: Document, timeout: number): Promise<void> 
       const href = (link as HTMLLinkElement).href
       if (!href || href.startsWith('data:')) continue
       
-      const response = await fetch(href)
-      if (!response.ok) continue
-      
-      const css = await response.text()
+      const css = await readResource(href, deadline, (response) => response.text())
+      if (css === null) continue
       const processedCSS = await processCSSUrls(css, href)
       
       const style = doc.createElement('style')

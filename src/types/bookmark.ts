@@ -58,5 +58,7 @@ export interface SaveResult {
   message?: string;
   /** 书签已保存但截图生成或上传失败时的原因 */
   screenshotError?: string;
+  /** 书签已保存但快照捕获或上传失败时的原因 */
+  snapshotError?: string;
   error?: string;
 }
