@@ -76,16 +76,16 @@ pnpm build
 
 ## Release
 
-CI builds every push and pull request. On a push to `main`, if `package.json` and `manifest.json` contain a version without a matching tag, CI creates `v<version>` and publishes a GitHub Release with `markvault-extension-chrome.zip` and `checksums.sha256`. Existing tags are never moved, so each version can be released only once.
+CI builds every push and pull request. On a push to `main`, if `package.json` and `manifest.json` contain a version without a matching tag, CI creates `v<version>` and publishes a GitHub Release with `markvault-extension-chrome.zip` and `checksums.sha256`. The release notes list every commit since the previous tag. Existing tags are never moved, so each version can be released only once.
 
 You can also release manually by bumping both versions, refreshing the lockfile if dependencies changed, running `pnpm typecheck` and `pnpm build`, and pushing a matching tag:
 
 ```bash
-git tag v0.0.5
-git push origin v0.0.5
+git tag v0.1.0
+git push origin v0.1.0
 ```
 
-Versions start at `0.0.1` and increment the last segment. Each segment must be an integer from 0 to 65535 without leading zeros.
+Versions start at `0.1.0`, and every commit increments the last segment (`0.1.1`, `0.1.2`, …). Each segment must be an integer from 0 to 65535 without leading zeros.
 
 ## License
 

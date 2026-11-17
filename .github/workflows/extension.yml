@@ -105,12 +105,33 @@ jobs:
             exit 0
           fi
 
+          # GitHub 自动生成的说明只列出合并的 PR，直接推送到 main 时只剩一个对比链接。
+          # 这里改为列出上一个版本标签以来的全部提交，标题和正文都写进说明。
+          PREVIOUS_TAG=$(git tag --list 'v[0-9]*' --merged "$COMMIT_SHA" --sort=-version:refname |
+            awk -v current="$TAG" '$0 != current && !found { print; found = 1 }')
+          if [ -n "$PREVIOUS_TAG" ]; then
+            RANGE="${PREVIOUS_TAG}..${COMMIT_SHA}"
+            HISTORY_PATH="compare/${PREVIOUS_TAG}...${TAG}"
+          else
+            RANGE="$COMMIT_SHA"
+            HISTORY_PATH="commits/${TAG}"
+          fi
+          NOTES_FILE="${RUNNER_TEMP}/release-notes.md"
+          {
+            echo "## What's Changed"
+            echo
+            # 有正文时在标题后空一行并缩进两格，使正文归属于该条目；没有正文时不留空行。
+            git log --reverse --no-merges --format='- %s (%h)%n%n%w(0,2,2)%-b' "$RANGE"
+            echo
+            echo "**Full Changelog**: https://github.com/${GH_REPO}/${HISTORY_PATH}"
+          } > "$NOTES_FILE"
+
           if [ "$TAG_EXISTS" = true ]; then
             gh release create "$TAG" \
               markvault-extension-chrome.zip checksums.sha256 \
-              --verify-tag --generate-notes --title "MarkVault Extension ${TAG}"
+              --verify-tag --notes-file "$NOTES_FILE" --title "MarkVault Extension ${TAG}"
           else
             gh release create "$TAG" \
               markvault-extension-chrome.zip checksums.sha256 \
-              --target "$COMMIT_SHA" --generate-notes --title "MarkVault Extension ${TAG}"
+              --target "$COMMIT_SHA" --notes-file "$NOTES_FILE" --title "MarkVault Extension ${TAG}"
           fi

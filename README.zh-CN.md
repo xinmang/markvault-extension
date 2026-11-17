@@ -76,16 +76,16 @@ pnpm build
 
 ## 发布
 
-CI 会在每次推送和 PR 时构建。推送到 `main` 时，如果 `package.json` 与 `manifest.json` 的版本还没有对应标签，CI 会创建 `v<版本>` 并发布 GitHub Release，附带 `markvault-extension-chrome.zip` 和 `checksums.sha256`。已有标签不会被移动，因此每个版本只能发布一次。
+CI 会在每次推送和 PR 时构建。推送到 `main` 时，如果 `package.json` 与 `manifest.json` 的版本还没有对应标签，CI 会创建 `v<版本>` 并发布 GitHub Release，附带 `markvault-extension-chrome.zip` 和 `checksums.sha256`。Release 说明会列出上一个标签以来的全部提交。已有标签不会被移动，因此每个版本只能发布一次。
 
 也可以手动发布：同步递增两个版本文件，依赖有变化时更新锁文件，执行 `pnpm typecheck` 和 `pnpm build`，然后推送匹配的标签：
 
 ```bash
-git tag v0.0.5
-git push origin v0.0.5
+git tag v0.1.0
+git push origin v0.1.0
 ```
 
-版本从 `0.0.1` 起步，递增末段。每段必须是 0–65535 的整数，且不能有前导零。
+版本从 `0.1.0` 起步，每次提交递增末段（`0.1.1`、`0.1.2`……）。每段必须是 0–65535 的整数，且不能有前导零。
 
 ## 许可证
 
