@@ -81,12 +81,12 @@ CI builds every push and pull request. On a push to `main`, if `package.json` an
 You can also release manually by bumping both versions, refreshing the lockfile if dependencies changed, running `pnpm typecheck` and `pnpm build`, and pushing a matching tag:
 
 ```bash
-git tag v0.0.4
-git push origin v0.0.4
+git tag v0.0.5
+git push origin v0.0.5
 ```
 
 Versions start at `0.0.1` and increment the last segment. Each segment must be an integer from 0 to 65535 without leading zeros.
 
 ## License
 
-[CC BY-NC 4.0](LICENSE), the same license as [MarkVault](https://github.com/xinmang/MarkVault). The extension originated from [xinmang/tmarks](https://github.com/xinmang/tmarks); TMarks Team attribution is retained. Third-party dependencies keep their own licenses.
+[CC BY-NC 4.0](LICENSE), the same license as [MarkVault](https://github.com/xinmang/MarkVault). The extension originated from [ai-tmarks/tmarks](https://github.com/ai-tmarks/tmarks); TMarks Team attribution is retained. Third-party dependencies keep their own licenses.

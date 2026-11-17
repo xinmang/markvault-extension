@@ -81,12 +81,12 @@ CI 会在每次推送和 PR 时构建。推送到 `main` 时，如果 `package.j
 也可以手动发布：同步递增两个版本文件，依赖有变化时更新锁文件，执行 `pnpm typecheck` 和 `pnpm build`，然后推送匹配的标签：
 
 ```bash
-git tag v0.0.4
-git push origin v0.0.4
+git tag v0.0.5
+git push origin v0.0.5
 ```
 
 版本从 `0.0.1` 起步，递增末段。每段必须是 0–65535 的整数，且不能有前导零。
 
 ## 许可证
 
-[CC BY-NC 4.0](LICENSE)，与 [MarkVault](https://github.com/xinmang/MarkVault) 使用同一许可证。扩展源自 [xinmang/tmarks](https://github.com/xinmang/tmarks)，保留 TMarks Team 署名。第三方依赖遵循各自许可证。
+[CC BY-NC 4.0](LICENSE)，与 [MarkVault](https://github.com/xinmang/MarkVault) 使用同一许可证。扩展源自 [ai-tmarks/tmarks](https://github.com/ai-tmarks/tmarks)，保留 TMarks Team 署名。第三方依赖遵循各自许可证。
